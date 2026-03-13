@@ -163,10 +163,10 @@ All settings via environment variables:
 | `OPENAI_API_KEY` | — | OpenAI API key (auto-switches provider) |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
 | `ECLAW_MODEL` | `claude-sonnet-4-20250514` | Model to use |
-| `ECLAW_MAX_TOKENS` | `4096` | Max tokens per response |
+| `ECLAW_MAX_TOKENS` | `8192` | Max tokens per response |
 | `ECLAW_PROVIDER` | `anthropic` | LLM provider (`anthropic`, `openai`, or `gemini`) |
 | `ECLAW_COMMAND_TIMEOUT` | `30000` | Bash command timeout in ms |
-| `ECLAW_TOKEN_BUDGET` | `8000` | Max input tokens before auto-compaction |
+| `ECLAW_TOKEN_BUDGET` | `60000` | Max input tokens before auto-compaction |
 | `ECLAW_DASHBOARD` | `false` | Start Phoenix dashboard |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram Bot API token (auto-starts bot) |
 | `TELEGRAM_ALLOWED_USERS` | — | Comma-separated Telegram user IDs allowed to use the bot |

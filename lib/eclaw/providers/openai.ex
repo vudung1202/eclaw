@@ -49,7 +49,7 @@ defmodule Eclaw.Providers.OpenAI do
 
   defp build_body(messages, system, tools, opts, _stream?) do
     model = Keyword.get(opts, :model, "gpt-4o")
-    max_tokens = Keyword.get(opts, :max_tokens, 4096)
+    max_tokens = Keyword.get(opts, :max_tokens, 8192)
 
     # Convert messages from Anthropic format to OpenAI format
     oai_messages = [%{"role" => "system", "content" => system} | convert_messages(messages)]

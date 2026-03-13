@@ -322,7 +322,11 @@ defmodule Eclaw.Tools do
         # Disable redirects to prevent SSRF via redirect to internal IPs
         case Req.get(url, receive_timeout: 15_000, redirect: false) do
           {:ok, %{status: status, headers: headers}} when status in [301, 302, 303, 307, 308] ->
-            location = get_redirect_location(headers)
+            location =
+              case get_redirect_location(headers) do
+                nil -> nil
+                loc -> resolve_redirect(loc, url)
+              end
 
             if location && Security.safe_url?(location) do
               case Req.get(location, receive_timeout: 15_000, redirect: false) do
@@ -365,9 +369,23 @@ defmodule Eclaw.Tools do
 
   defp get_redirect_location(headers) do
     Enum.find_value(headers, fn
-      {"location", value} -> value
+      {"location", [value | _]} when is_binary(value) -> value
+      {"location", value} when is_binary(value) -> value
       _ -> nil
     end)
+  end
+
+  # Resolve relative redirect URL against the original URL
+  defp resolve_redirect(location, original_url) do
+    case URI.parse(location) do
+      %URI{host: nil} ->
+        # Relative URL — resolve against original
+        original = URI.parse(original_url)
+        URI.to_string(%{original | path: location, query: nil, fragment: nil})
+
+      _ ->
+        location
+    end
   end
 
   # Redact potential secrets from log output
@@ -378,13 +396,58 @@ defmodule Eclaw.Tools do
     |> String.replace(~r/((?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD)\s*=\s*)[^\s"']+/i, "\\1[REDACTED]")
   end
 
-  # Strip HTML tags, keep text content
+  # Strip HTML to clean text content.
+  # Removes noise elements (nav, header, footer, menus) to minimize token usage.
   defp strip_html(html) do
     html
-    |> String.replace(~r/<script[^>]*>.*?<\/script>/s, "")
-    |> String.replace(~r/<style[^>]*>.*?<\/style>/s, "")
+    # Remove noise elements entirely (non-greedy, dotall)
+    |> String.replace(~r/<(script|style|noscript|svg|iframe)[^>]*>.*?<\/\1>/si, "")
+    |> String.replace(~r/<(nav|header|footer|aside)[^>]*>.*?<\/\1>/si, "")
+    # Remove HTML comments
+    |> String.replace(~r/<!--.*?-->/s, "")
+    # Remove remaining tags
     |> String.replace(~r/<[^>]+>/, " ")
+    # Decode HTML entities
+    |> decode_html_entities()
+    # Collapse whitespace
     |> String.replace(~r/\s+/, " ")
     |> String.trim()
+  end
+
+  # Decode common HTML entities (numeric + named)
+  defp decode_html_entities(text) do
+    text
+    # Numeric entities: &#226; → â
+    |> String.replace(~r/&#(\d+);/, &decode_numeric_entity/1)
+    # Hex entities: &#x00E2; → â
+    |> String.replace(~r/&#x([0-9a-fA-F]+);/, &decode_hex_entity/1)
+    # Named entities
+    |> String.replace("&amp;", "&")
+    |> String.replace("&lt;", "<")
+    |> String.replace("&gt;", ">")
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&apos;", "'")
+    |> String.replace("&nbsp;", " ")
+    |> String.replace("&mdash;", "—")
+    |> String.replace("&ndash;", "–")
+    |> String.replace("&laquo;", "«")
+    |> String.replace("&raquo;", "»")
+    |> String.replace("&copy;", "©")
+    |> String.replace("&reg;", "®")
+    |> String.replace("&trade;", "™")
+  end
+
+  defp decode_numeric_entity(match) do
+    code = match |> String.trim_leading("&#") |> String.trim_trailing(";")
+    <<String.to_integer(code)::utf8>>
+  rescue
+    _ -> match
+  end
+
+  defp decode_hex_entity(match) do
+    hex = match |> String.trim_leading("&#x") |> String.trim_trailing(";")
+    <<String.to_integer(hex, 16)::utf8>>
+  rescue
+    _ -> match
   end
 end

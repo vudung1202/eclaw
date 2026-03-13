@@ -6,7 +6,7 @@ config :eclaw,
 
   # LLM settings
   model: "claude-sonnet-4-20250514",
-  max_tokens: 4096,
+  max_tokens: 8192,
   api_url: "https://api.anthropic.com/v1/messages",
   anthropic_version: "2023-06-01",
 
@@ -18,7 +18,7 @@ config :eclaw,
 
   # Context management
   # Token budget per request (compacts if exceeded). Lower this if account has low rate limits.
-  input_token_budget: 8_000,
+  input_token_budget: 60_000,
 
   # Retry settings
   max_retries: 3,

@@ -335,7 +335,7 @@ defmodule Eclaw.Agent do
 
   @empty_usage %{input_tokens: 0, output_tokens: 0, requests: 0}
 
-  defp agent_loop(messages, system, iteration, mode, llm_opts, usage_acc \\ @empty_usage) do
+  defp agent_loop(messages, system, iteration, mode, llm_opts, usage_acc \\ @empty_usage, rate_limit_retries \\ 0) do
     max = Config.max_iterations()
 
     if iteration >= max do
@@ -360,16 +360,23 @@ defmodule Eclaw.Agent do
           handle_response(response, messages, system, iteration, mode, llm_opts, new_usage)
 
         {:error, :token_rate_limited} ->
-          Logger.warning("[Eclaw.Agent] Token rate limited — forcing compaction")
-          notify(mode, {:status, "Rate limited. Compacting and retrying in 15s..."})
+          Logger.warning("[Eclaw.Agent] Token rate limited (retry #{rate_limit_retries})")
 
-          case Context.force_compact(messages, system) do
-            {:ok, compacted} when compacted == messages ->
-              {:error, :context_too_large}
+          if rate_limit_retries >= 2 do
+            {:error, :context_too_large}
+          else
+            case Context.force_compact(messages, system) do
+              {:ok, compacted} when compacted == messages ->
+                # Already minimal — wait for rate limit window to reset (60s)
+                notify(mode, {:status, "Rate limited. Waiting 60s for reset..."})
+                Process.sleep(60_000)
+                agent_loop(compacted, system, iteration, mode, llm_opts, usage_acc, rate_limit_retries + 1)
 
-            {:ok, compacted} ->
-              Process.sleep(15_000)
-              agent_loop(compacted, system, iteration + 1, mode, llm_opts, usage_acc)
+              {:ok, compacted} ->
+                notify(mode, {:status, "Rate limited. Compacting and retrying in 15s..."})
+                Process.sleep(15_000)
+                agent_loop(compacted, system, iteration + 1, mode, llm_opts, usage_acc, rate_limit_retries + 1)
+            end
           end
 
         {:error, reason} ->
@@ -397,7 +404,7 @@ defmodule Eclaw.Agent do
         # Compact if needed after each tool round
         messages = maybe_compact(messages, system, mode, model)
 
-        agent_loop(messages, system, iteration + 1, mode, llm_opts, usage_acc)
+        agent_loop(messages, system, iteration + 1, mode, llm_opts, usage_acc, 0)
 
       "end_turn" ->
         {:ok, extract_text(content_blocks), messages, usage_acc}

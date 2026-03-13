@@ -74,7 +74,7 @@ defmodule Eclaw.Providers.Anthropic do
 
   defp build_body(messages, system, tools, opts, stream?) do
     model = Keyword.get(opts, :model, "claude-sonnet-4-20250514")
-    max_tokens = Keyword.get(opts, :max_tokens, 4096)
+    max_tokens = Keyword.get(opts, :max_tokens, 8192)
 
     base = %{
       "model" => model,
