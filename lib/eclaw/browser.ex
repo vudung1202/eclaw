@@ -1,27 +1,27 @@
 defmodule Eclaw.Browser do
   @moduledoc """
-  Browser automation tool using Playwright CLI or Chrome DevTools Protocol (CDP).
+  Browser automation tool using Playwright with persistent session support.
 
   Provides tools for:
   - Navigating to URLs and capturing page content
   - Taking screenshots
   - Clicking elements and filling forms
   - Extracting structured data from web pages
+  - Manual login via visible browser (cookies saved for future use)
 
   Requires: `npx playwright install chromium` (one-time setup)
+
+  ## Persistent Sessions
+
+  All browser tools share a persistent profile at `~/.eclaw/browser-profile/`.
+  Use `browser_login` to open a visible browser window, login manually, and
+  cookies will be saved for all subsequent headless `browser_*` calls.
 
   ## Usage as a tool
 
   Register as a plugin tool:
 
       Eclaw.ToolRegistry.register(Eclaw.Browser)
-
-  The agent can then use these tools:
-  - `browser_navigate` — Open a URL and get page content
-  - `browser_screenshot` — Take a screenshot of the current page
-  - `browser_click` — Click an element by selector
-  - `browser_type` — Type text into an input field
-  - `browser_evaluate` — Execute JavaScript in the page context
   """
 
   require Logger
@@ -100,6 +100,22 @@ defmodule Eclaw.Browser do
           },
           "required" => ["script"]
         }
+      },
+      %{
+        "name" => "browser_login",
+        "description" =>
+          "Open a VISIBLE browser window for manual login. " <>
+            "The user logs in manually — cookies are saved to a persistent profile. " <>
+            "All subsequent browser_* tool calls will reuse this login session. " <>
+            "Use this once per site (e.g. Facebook, Google, GitHub) before using other browser tools on authenticated pages. " <>
+            "The browser window stays open for 2 minutes.",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "url" => %{"type" => "string", "description" => "URL to open for login (e.g. https://www.messenger.com)"}
+          },
+          "required" => ["url"]
+        }
       }
     ]
   end
@@ -138,6 +154,12 @@ defmodule Eclaw.Browser do
 
     with :ok <- validate_browser_url(url) do
       evaluate(script, url: url)
+    end
+  end
+
+  def execute("browser_login", %{"url" => url}) do
+    with :ok <- validate_browser_url(url) do
+      login(url)
     end
   end
 
@@ -181,6 +203,30 @@ defmodule Eclaw.Browser do
     run_playwright_script(pw_script)
   end
 
+  @doc "Open a visible browser for manual login. Cookies are saved to persistent profile."
+  @spec login(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def login(url) do
+    profile_dir = browser_profile_dir()
+
+    script = """
+    const { chromium } = require('playwright');
+    (async () => {
+      const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, {
+        headless: false,
+        viewport: { width: 1280, height: 800 }
+      });
+      const page = context.pages()[0] || await context.newPage();
+      await page.goto(#{js_string_literal(url)}, { waitUntil: 'networkidle', timeout: 30000 });
+      console.log('Browser opened. Please login manually. Window will close in 2 minutes.');
+      await page.waitForTimeout(120000);
+      await context.close();
+      console.log('Login session saved.');
+    })();
+    """
+
+    run_playwright_script(script, 150_000)
+  end
+
   # ── Private: Playwright Script Builders ────────────────────────────
 
   defp build_navigate_script(url, wait_for) do
@@ -222,25 +268,26 @@ defmodule Eclaw.Browser do
     """)
   end
 
-  # Common Playwright script wrapper — all scripts share this boilerplate.
+  # Common Playwright script wrapper — uses persistent profile for session reuse.
   defp wrap_playwright_script(url, action_code) do
+    profile_dir = browser_profile_dir()
     navigate_line = if url, do: "await page.goto(#{js_string_literal(url)}, { waitUntil: 'networkidle', timeout: 30000 });", else: ""
 
     """
     const { chromium } = require('playwright');
     (async () => {
-      const browser = await chromium.launch({ headless: true });
-      const page = await browser.newPage();
+      const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, { headless: true });
+      const page = context.pages()[0] || await context.newPage();
       #{navigate_line}
       #{action_code}
-      await browser.close();
+      await context.close();
     })();
     """
   end
 
   # ── Private: Script Execution ──────────────────────────────────────
 
-  defp run_playwright_script(script) do
+  defp run_playwright_script(script, timeout \\ 45_000) do
     # Write script to temp file and execute with Node.js
     script_path = Path.join(System.tmp_dir!(), "eclaw_pw_#{:erlang.unique_integer([:positive])}.js")
     File.write!(script_path, script)
@@ -253,7 +300,7 @@ defmodule Eclaw.Browser do
           )
         end)
 
-      case Task.yield(task, 45_000) || Task.shutdown(task) do
+      case Task.yield(task, timeout) || Task.shutdown(task) do
         {:ok, {output, 0}} ->
           {:ok, String.trim(output)}
 
@@ -264,11 +311,17 @@ defmodule Eclaw.Browser do
           {:error, "Playwright crashed: #{inspect(reason)}"}
 
         nil ->
-          {:error, "Playwright timed out after 45s"}
+          {:error, "Playwright timed out after #{div(timeout, 1000)}s"}
       end
     after
       File.rm(script_path)
     end
+  end
+
+  defp browser_profile_dir do
+    dir = Path.expand("~/.eclaw/browser-profile")
+    File.mkdir_p!(dir)
+    dir
   end
 
   defp run_playwright_action(action, params) do

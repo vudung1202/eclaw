@@ -32,8 +32,8 @@ defmodule Eclaw.Context do
   @compaction_threshold 0.70
   # How many recent messages to keep (not compacted)
   @keep_recent 4
-  # Max tool result chars before truncation (~850 tokens)
-  @max_tool_result_chars 3_000
+  # Max tool result chars before truncation (~2800 tokens)
+  @max_tool_result_chars 10_000
 
   # ── Public API ─────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ defmodule Eclaw.Context do
     tokens = estimate_tokens(messages)
 
     # Check budget first (rate limit protection)
-    budget = Eclaw.Config.get(:input_token_budget, 8_000)
+    budget = Eclaw.Config.get(:input_token_budget, 60_000)
     if tokens > budget do
       true
     else
