@@ -92,6 +92,7 @@ defmodule Eclaw.Security do
 
   @doc "Check if URL is safe (not targeting internal/private networks)."
   @spec safe_url?(String.t()) :: boolean()
+  def safe_url?(url) when not is_binary(url), do: false
   def safe_url?(url) do
     case URI.parse(url) do
       %URI{host: host} when is_binary(host) ->

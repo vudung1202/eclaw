@@ -106,7 +106,7 @@ Eclaw.Supervisor (rest_for_one)
 | `TELEGRAM_ALLOWED_USERS` | For Telegram | Comma-separated user IDs (default-deny) |
 | `ECLAW_PROVIDER` | No | `anthropic` (default), `openai`, or `gemini` |
 | `ECLAW_MODEL` | No | Default: `claude-sonnet-4-20250514` |
-| `ECLAW_MAX_TOKENS` | No | Default: `4096` |
+| `ECLAW_MAX_TOKENS` | No | Default: `8192` |
 | `ECLAW_COMMAND_TIMEOUT` | No | Bash timeout ms, default: `30000` |
 | `ECLAW_DASHBOARD` | No | `true` to start Phoenix dashboard |
 | `ECLAW_API_TOKEN` | No | Bearer token for API auth (default-deny if unset) |
