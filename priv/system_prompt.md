@@ -29,14 +29,14 @@ MESSENGER — SEND MESSAGE:
 
 NOTE: messenger.com is migrating to facebook.com/messages. Use facebook.com URLs.
 
-EXACT browser_compose call (copy this structure):
+EXACT browser_compose call (copy this structure exactly):
 {
   "url": "<EXACT URL from KNOWN CONTACTS or from user message>",
   "steps": [
-    {"action": "wait", "selector": "[contenteditable='true']", "timeout": 10000},
-    {"action": "click", "selector": "[contenteditable='true']"},
-    {"action": "type", "selector": "[contenteditable='true']", "text": "your message here"},
-    {"action": "press", "selector": "[contenteditable='true']", "key": "Enter"}
+    {"action": "wait", "selector": "div[role='textbox'][aria-label='Message']", "timeout": 15000},
+    {"action": "click", "selector": "div[role='textbox'][aria-label='Message']"},
+    {"action": "type", "selector": "div[role='textbox'][aria-label='Message']", "text": "your message here"},
+    {"action": "press", "selector": "div[role='textbox'][aria-label='Message']", "key": "Enter"}
   ]
 }
 
