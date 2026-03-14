@@ -42,6 +42,9 @@ defmodule Eclaw.Application do
       # Scheduled task manager (DETS-backed, fires via ChannelManager)
       Eclaw.Scheduler,
 
+      # OpenClaw skill discovery (ETS-backed index)
+      Eclaw.Skills.OpenClaw,
+
       # MCP client — external tool integration
       Eclaw.MCP,
 
@@ -78,6 +81,12 @@ defmodule Eclaw.Application do
 
     # Register schedule management tool
     Eclaw.ToolRegistry.register(Eclaw.Tools.Schedule)
+
+    # Register MCP management tool
+    Eclaw.ToolRegistry.register(Eclaw.Tools.McpManage)
+
+    # Register OpenClaw skill search tool
+    Eclaw.ToolRegistry.register(Eclaw.Tools.SkillSearch)
 
     # Register MCP tools (discovered from connected servers)
     mcp_tools = Eclaw.MCP.tool_definitions()
