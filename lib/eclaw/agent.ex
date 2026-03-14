@@ -390,21 +390,21 @@ defmodule Eclaw.Agent do
           call_usage = extract_usage(response)
           new_usage = merge_usage(usage_acc, call_usage)
 
-          handle_response(response, messages, system, iteration, mode, llm_opts, new_usage)
+          handle_response(response, messages, system, iteration, mode, llm_opts, new_usage, rate_limit_retries)
 
         {:error, :token_rate_limited} ->
           Logger.warning("[Eclaw.Agent] Token rate limited (retry #{rate_limit_retries})")
 
-          if rate_limit_retries >= 5 do
+          if rate_limit_retries >= 3 do
             {:error, :context_too_large}
           else
-            # Escalating backoff: 3s, 5s, 10s, 20s, 30s
-            delay = Enum.at([3_000, 5_000, 10_000, 20_000, 30_000], rate_limit_retries, 30_000)
+            # Escalating backoff aligned with per-minute rate limit window
+            delay = Enum.at([10_000, 30_000, 60_000], rate_limit_retries, 60_000)
 
             case Context.force_compact(messages, system) do
               {:ok, compacted} when compacted == messages ->
                 # Already minimal — wait for rate limit window to reset
-                notify(mode, {:status, "Rate limited. Retrying in #{div(delay, 1000)}s..."})
+                notify(mode, {:status, "Rate limited. Waiting #{div(delay, 1000)}s..."})
                 Process.sleep(delay)
                 agent_loop(compacted, system, iteration, mode, llm_opts, usage_acc, rate_limit_retries + 1)
 
@@ -424,7 +424,7 @@ defmodule Eclaw.Agent do
 
   # ── Response handling ─────────────────────────────────────────────
 
-  defp handle_response(%{"content" => content_blocks, "stop_reason" => stop_reason}, messages, system, iteration, mode, llm_opts, usage_acc) do
+  defp handle_response(%{"content" => content_blocks, "stop_reason" => stop_reason}, messages, system, iteration, mode, llm_opts, usage_acc, rate_limit_retries) do
     assistant_message = %{"role" => "assistant", "content" => content_blocks}
     messages = messages ++ [assistant_message]
 
@@ -440,7 +440,9 @@ defmodule Eclaw.Agent do
         # Compact if needed after each tool round
         messages = maybe_compact(messages, system, mode, model)
 
-        agent_loop(messages, system, iteration + 1, mode, llm_opts, usage_acc, 0)
+        # Decay rate_limit_retries instead of resetting to 0 — prevents
+        # immediately hitting rate limit again on the next iteration
+        agent_loop(messages, system, iteration + 1, mode, llm_opts, usage_acc, max(0, rate_limit_retries - 1))
 
       "end_turn" ->
         {:ok, extract_text(content_blocks), messages, usage_acc}
@@ -451,7 +453,7 @@ defmodule Eclaw.Agent do
     end
   end
 
-  defp handle_response(unexpected, _messages, _system, _iteration, _mode, _llm_opts, _usage_acc) do
+  defp handle_response(unexpected, _messages, _system, _iteration, _mode, _llm_opts, _usage_acc, _rate_limit_retries) do
     Logger.error("[Eclaw.Agent] Unexpected response: #{inspect(unexpected)}")
     {:error, :unexpected_response}
   end
