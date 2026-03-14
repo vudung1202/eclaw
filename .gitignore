@@ -25,3 +25,7 @@ eclaw-*.tar
 
 # Temporary files for e.g. tests
 /tmp
+
+# Node.js (Playwright)
+/node_modules/
+package-lock.json

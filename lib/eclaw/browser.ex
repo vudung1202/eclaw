@@ -102,6 +102,38 @@ defmodule Eclaw.Browser do
         }
       },
       %{
+        "name" => "browser_compose",
+        "description" =>
+          "Run multiple browser actions in a SINGLE session (navigate → wait → type → click → etc). " <>
+            "IMPORTANT: Use this instead of separate browser_type + browser_click calls, because each " <>
+            "separate call opens a NEW browser and loses previous state. " <>
+            "Steps run sequentially on the same page. " <>
+            "Supported step actions: wait (for selector), type (fill input), click, press (key like Enter), evaluate (JS).",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "url" => %{"type" => "string", "description" => "URL to navigate to first"},
+            "steps" => %{
+              "type" => "array",
+              "description" => "Ordered list of actions to perform",
+              "items" => %{
+                "type" => "object",
+                "properties" => %{
+                  "action" => %{"type" => "string", "description" => "wait | type | click | press | evaluate"},
+                  "selector" => %{"type" => "string", "description" => "CSS selector (for wait/type/click/press)"},
+                  "text" => %{"type" => "string", "description" => "Text to type (for type action)"},
+                  "key" => %{"type" => "string", "description" => "Key to press (for press action, e.g. Enter)"},
+                  "script" => %{"type" => "string", "description" => "JS code (for evaluate action)"},
+                  "timeout" => %{"type" => "number", "description" => "Timeout in ms (for wait, default 10000)"}
+                },
+                "required" => ["action"]
+              }
+            }
+          },
+          "required" => ["url", "steps"]
+        }
+      },
+      %{
         "name" => "browser_login",
         "description" =>
           "Open a VISIBLE browser window for manual login. " <>
@@ -157,6 +189,12 @@ defmodule Eclaw.Browser do
     end
   end
 
+  def execute("browser_compose", %{"url" => url, "steps" => steps}) when is_list(steps) do
+    with :ok <- validate_browser_url(url) do
+      compose(url, steps)
+    end
+  end
+
   def execute("browser_login", %{"url" => url}) do
     with :ok <- validate_browser_url(url) do
       login(url)
@@ -203,6 +241,67 @@ defmodule Eclaw.Browser do
     run_playwright_script(pw_script)
   end
 
+  @doc "Run multiple actions in a single browser session."
+  @spec compose(String.t(), list(map())) :: {:ok, String.t()} | {:error, term()}
+  def compose(url, steps) do
+    action_lines =
+      steps
+      |> Enum.map(&build_compose_step/1)
+      |> Enum.join("\n      ")
+
+    script = wrap_playwright_script(url, """
+      // Wait for page to be interactive
+      await page.waitForFunction(() => (document.body.innerText || '').trim().length > 10, { timeout: 10000 }).catch(() => {});
+
+      #{action_lines}
+
+      // Return final page text as confirmation
+      const result = await page.evaluate(() => document.body.innerText);
+      console.log(result.substring(0, 3000));
+    """)
+
+    run_playwright_script(script, 60_000)
+  end
+
+  defp build_compose_step(%{"action" => "wait"} = step) do
+    selector = step["selector"] || "body"
+    timeout = step["timeout"] || 10_000
+    "await page.waitForSelector(#{js_string_literal(selector)}, { timeout: #{timeout} });"
+  end
+
+  defp build_compose_step(%{"action" => "type", "selector" => selector, "text" => text}) do
+    # Click to focus + keyboard.type for contenteditable support (Messenger, etc.)
+    """
+    await page.click(#{js_string_literal(selector)}, { force: true, timeout: 10000 });
+    await page.keyboard.type(#{js_string_literal(text)}, { delay: 30 });
+    """
+  end
+
+  defp build_compose_step(%{"action" => "click", "selector" => selector}) do
+    "await page.click(#{js_string_literal(selector)}, { force: true, timeout: 10000 });"
+  end
+
+  defp build_compose_step(%{"action" => "press", "key" => key} = step) do
+    selector = step["selector"] || "body"
+    "await page.press(#{js_string_literal(selector)}, #{js_string_literal(key)});"
+  end
+
+  defp build_compose_step(%{"action" => "evaluate", "script" => script}) do
+    encoded = Base.encode64(script)
+    """
+    {
+      const userScript = Buffer.from(#{js_string_literal(encoded)}, 'base64').toString('utf-8');
+      const wrapped = '(() => {' + userScript + '})()';
+      const evalResult = await page.evaluate(wrapped);
+      if (evalResult) console.log('eval:', JSON.stringify(evalResult));
+    }
+    """
+  end
+
+  defp build_compose_step(%{"action" => action}) do
+    "// Unknown action: #{action}"
+  end
+
   @doc "Open a visible browser for manual login. Cookies are saved to persistent profile."
   @spec login(String.t()) :: {:ok, String.t()} | {:error, term()}
   def login(url) do
@@ -213,10 +312,11 @@ defmodule Eclaw.Browser do
     (async () => {
       const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, {
         headless: false,
+        channel: 'chrome',
         viewport: { width: 1280, height: 800 }
       });
       const page = context.pages()[0] || await context.newPage();
-      await page.goto(#{js_string_literal(url)}, { waitUntil: 'networkidle', timeout: 30000 });
+      await page.goto(#{js_string_literal(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
       console.log('Browser opened. Please login manually. Window will close in 2 minutes.');
       await page.waitForTimeout(120000);
       await context.close();
@@ -230,7 +330,15 @@ defmodule Eclaw.Browser do
   # ── Private: Playwright Script Builders ────────────────────────────
 
   defp build_navigate_script(url, wait_for) do
-    wait_line = if wait_for, do: "await page.waitForSelector(#{js_string_literal(wait_for)});", else: ""
+    wait_line =
+      if wait_for do
+        "await page.waitForSelector(#{js_string_literal(wait_for)}, { timeout: 10000 });"
+      else
+        # Wait for SPA content to render (body has meaningful text)
+        """
+        await page.waitForFunction(() => (document.body.innerText || '').trim().length > 50, { timeout: 10000 }).catch(() => {});
+        """
+      end
 
     wrap_playwright_script(url, """
       #{wait_line}
@@ -271,12 +379,12 @@ defmodule Eclaw.Browser do
   # Common Playwright script wrapper — uses persistent profile for session reuse.
   defp wrap_playwright_script(url, action_code) do
     profile_dir = browser_profile_dir()
-    navigate_line = if url, do: "await page.goto(#{js_string_literal(url)}, { waitUntil: 'networkidle', timeout: 30000 });", else: ""
+    navigate_line = if url, do: "await page.goto(#{js_string_literal(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });", else: ""
 
     """
     const { chromium } = require('playwright');
     (async () => {
-      const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, { headless: true });
+      const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, { headless: true, channel: 'chrome' });
       const page = context.pages()[0] || await context.newPage();
       #{navigate_line}
       #{action_code}
@@ -295,8 +403,9 @@ defmodule Eclaw.Browser do
     try do
       task =
         Task.Supervisor.async_nolink(Eclaw.TaskSupervisor, fn ->
-          System.cmd("node", [script_path],
-            stderr_to_stdout: true
+          System.cmd(node_binary(), [script_path],
+            stderr_to_stdout: true,
+            env: [{"NODE_PATH", node_modules_path()}]
           )
         end)
 
@@ -316,6 +425,36 @@ defmodule Eclaw.Browser do
     after
       File.rm(script_path)
     end
+  end
+
+  # Find a working node binary (NVM-aware).
+  # Elixir VM doesn't load NVM, so PATH may point to an old homebrew node.
+  defp node_binary do
+    nvm_node = Path.expand("~/.nvm/versions/node")
+
+    case File.ls(nvm_node) do
+      {:ok, versions} when versions != [] ->
+        latest = versions |> Enum.sort(:desc) |> List.first()
+        path = Path.join([nvm_node, latest, "bin", "node"])
+        if File.exists?(path), do: path, else: "node"
+
+      _ ->
+        "node"
+    end
+  end
+
+  # Resolve NODE_PATH so temp scripts can find playwright.
+  # Includes all possible locations joined by ":" — project, home, NVM global.
+  defp node_modules_path do
+    candidates = [
+      Path.join(File.cwd!(), "node_modules"),
+      Path.expand("~/node_modules"),
+      Path.join([Path.dirname(Path.dirname(node_binary())), "lib", "node_modules"])
+    ]
+
+    candidates
+    |> Enum.filter(&File.dir?/1)
+    |> Enum.join(":")
   end
 
   defp browser_profile_dir do

@@ -136,7 +136,7 @@ defmodule Eclaw.ChannelManager do
         # Notify channel adapter before processing (typing indicator)
         if channel_info, do: notify_typing(channel_info.module, from_id)
 
-        case Eclaw.Agent.chat(agent_pid, text) do
+        case chat_with_retry(agent_pid, text, session_id) do
           {:ok, response} ->
             if channel_info do
               channel_info.module.send_message(from_id, response, [])
@@ -152,6 +152,19 @@ defmodule Eclaw.ChannelManager do
 
       {:error, reason} ->
         Logger.error("[ChannelManager] Cannot create session #{session_id}: #{inspect(reason)}")
+    end
+  end
+
+  # Retry chat if agent is busy — wait and retry up to 30s
+  defp chat_with_retry(agent_pid, text, session_id, attempts \\ 0) do
+    case Eclaw.Agent.chat(agent_pid, text) do
+      {:error, :busy} when attempts < 10 ->
+        Logger.debug("[ChannelManager] Agent busy for #{session_id}, waiting 3s (attempt #{attempts + 1})")
+        Process.sleep(3_000)
+        chat_with_retry(agent_pid, text, session_id, attempts + 1)
+
+      result ->
+        result
     end
   end
 

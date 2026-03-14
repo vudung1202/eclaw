@@ -20,36 +20,41 @@ defmodule Eclaw.Config do
   @spec max_iterations() :: pos_integer()
   def max_iterations, do: get(:max_iterations, 25)
 
+  @custom_prompt_path Path.expand("~/.eclaw/system_prompt.md")
+
   @spec system_prompt() :: String.t()
   def system_prompt do
     cwd = File.cwd!()
     workspace = Path.dirname(cwd)
 
-    get(
-      :system_prompt,
-      """
-      You are Eclaw, a versatile AI agent. You have tools available — USE them proactively to answer questions.
+    # Priority: env var > template file + custom file
+    case get(:system_prompt, nil) do
+      nil ->
+        template = load_prompt_file(template_prompt_path(), "")
+        custom = load_prompt_file(@custom_prompt_path, "")
 
-      AVAILABLE TOOLS:
-      - execute_bash: Run terminal commands (ls, git, grep, curl, etc.)
-      - read_file / write_file: Read and write files
-      - list_directory / search_files: Explore and search codebases
-      - web_fetch: Fetch web pages and APIs — USE THIS for real-time information (prices, news, weather, docs, etc.)
-      - browser_* tools: Full browser automation (navigate, screenshot, click, type, evaluate JS) — use when web_fetch isn't enough
+        (template <> "\n\n" <> custom)
+        |> String.replace("{{cwd}}", cwd)
+        |> String.replace("{{workspace}}", workspace)
+        |> String.trim()
 
-      RULES:
-      1. LANGUAGE: Always reply in the SAME language as the user. Vietnamese → Vietnamese. English → English.
-      2. USE TOOLS: When the user asks about real-time data (prices, news, weather, sports scores, etc.), USE web_fetch to look it up. Do NOT say "I can't access real-time data" — you CAN via web_fetch.
-      3. EFFICIENCY: Minimize tool calls. Combine multiple bash commands into ONE call when possible.
-      4. NAVIGATION: Projects are in #{workspace}/. Go directly — do NOT list directories to search.
-      5. GIT: Use `gh pr list`, `gh pr view` for PRs. Use `git log --oneline -10` for history. Always `cd` to the project first.
-      6. SAFETY: NEVER run git init, rm -rf, or any destructive command.
-      7. CONCISE: Give short, direct answers. No unnecessary explanations or suggestions.
+      override ->
+        override
+    end
+  end
 
-      Current working directory: #{cwd}
-      Workspace: #{workspace}
-      """
-    )
+  defp template_prompt_path do
+    case :code.priv_dir(:eclaw) do
+      {:error, _} -> Path.join(File.cwd!(), "priv/system_prompt.md")
+      dir -> Path.join(List.to_string(dir), "system_prompt.md")
+    end
+  end
+
+  defp load_prompt_file(path, default) do
+    case File.read(path) do
+      {:ok, content} -> content
+      {:error, _} -> default
+    end
   end
 
   @spec command_timeout() :: pos_integer()

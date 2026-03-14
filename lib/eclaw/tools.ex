@@ -29,6 +29,9 @@ defmodule Eclaw.Tools do
   def execute("list_directory", %{"path" => path}, _ctx), do: list_directory(path)
   def execute("search_files", input, _ctx), do: search_files(input)
   def execute("web_fetch", %{"url" => url}, _ctx), do: web_fetch(url)
+  def execute("web_search", %{"query" => query}, _ctx), do: web_search(query)
+  def execute("store_memory", input, _ctx), do: store_memory(input)
+  def execute("recall_memory", %{"query" => query}, _ctx), do: recall_memory(query)
 
   def execute(tool_name, input, _ctx) do
     # Fallback: try plugin registry
@@ -385,6 +388,111 @@ defmodule Eclaw.Tools do
 
       _ ->
         location
+    end
+  end
+
+  # ── web_search ──────────────────────────────────────────────────
+
+  @spec web_search(String.t()) :: String.t()
+  def web_search(query) do
+    Logger.info("[Eclaw.Tools] search: #{query}")
+    encoded_query = URI.encode_www_form(query)
+    url = "https://html.duckduckgo.com/html/?q=#{encoded_query}"
+
+    task =
+      Task.Supervisor.async_nolink(Eclaw.TaskSupervisor, fn ->
+        case Req.get(url,
+               receive_timeout: 15_000,
+               redirect: true,
+               headers: [{"user-agent", "Mozilla/5.0 (compatible; Eclaw/1.0)"}]
+             ) do
+          {:ok, %{status: 200, body: body}} when is_binary(body) ->
+            parse_duckduckgo_results(body)
+
+          {:ok, %{status: status}} ->
+            "Error: DuckDuckGo returned HTTP #{status}"
+
+          {:error, reason} ->
+            "Error: #{inspect(reason)}"
+        end
+      end)
+
+    case Task.yield(task, 20_000) || Task.shutdown(task) do
+      {:ok, result} -> Context.truncate_tool_result(result)
+      {:exit, reason} -> "Error: Search crashed: #{inspect(reason)}"
+      nil -> "Error: Search timed out"
+    end
+  end
+
+  defp parse_duckduckgo_results(html) do
+    # DuckDuckGo HTML version uses <a class="result__a"> for titles and
+    # <a class="result__snippet"> for snippets
+    results =
+      Regex.scan(
+        ~r/<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>.*?<a[^>]+class="result__snippet"[^>]*>(.*?)<\/a>/s,
+        html
+      )
+      |> Enum.take(8)
+      |> Enum.with_index(1)
+      |> Enum.map(fn {[_full, url, title, snippet], idx} ->
+        title = title |> strip_tags() |> String.trim()
+        snippet = snippet |> strip_tags() |> String.trim()
+        url = decode_ddg_url(url)
+        "#{idx}. #{title}\n   #{url}\n   #{snippet}"
+      end)
+
+    if results == [] do
+      "No search results found for: #{html |> strip_tags() |> String.slice(0, 200)}"
+    else
+      Enum.join(results, "\n\n")
+    end
+  end
+
+  defp decode_ddg_url(url) do
+    # DuckDuckGo wraps URLs in a redirect: //duckduckgo.com/l/?uddg=<encoded_url>&...
+    case Regex.run(~r/uddg=([^&]+)/, url) do
+      [_, encoded] -> URI.decode_www_form(encoded)
+      _ -> url
+    end
+  end
+
+  defp strip_tags(html) do
+    html
+    |> String.replace(~r/<b>|<\/b>/, "")
+    |> String.replace(~r/<[^>]+>/, "")
+    |> decode_html_entities()
+  end
+
+  # ── store_memory / recall_memory ─────────────────────────────────
+
+  @spec store_memory(map()) :: String.t()
+  def store_memory(%{"key" => key, "content" => content} = input) do
+    type =
+      case Map.get(input, "type", "fact") do
+        "preference" -> :preference
+        "context" -> :context
+        _ -> :fact
+      end
+
+    Logger.info("[Eclaw.Tools] store_memory: #{key} (#{type})")
+    Eclaw.Memory.store(key, content, type)
+    "Stored in memory: [#{key}] #{content}"
+  end
+
+  @spec recall_memory(String.t()) :: String.t()
+  def recall_memory(query) do
+    Logger.info("[Eclaw.Tools] recall_memory: #{query}")
+
+    case Eclaw.Memory.search(query, limit: 10) do
+      [] ->
+        "No memories found for: #{query}"
+
+      entries ->
+        entries
+        |> Enum.map(fn entry ->
+          "- [#{entry.type}] #{entry.key}: #{entry.content}"
+        end)
+        |> Enum.join("\n")
     end
   end
 

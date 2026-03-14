@@ -65,10 +65,7 @@ defmodule Eclaw.Application do
   end
 
   defp register_plugins do
-    # Register browser automation if playwright is available
-    if System.find_executable("npx") do
-      Eclaw.ToolRegistry.register(Eclaw.Browser)
-    end
+    # Browser tools are auto-registered by ToolRegistry.init
 
     # Register MCP tools (discovered from connected servers)
     mcp_tools = Eclaw.MCP.tool_definitions()

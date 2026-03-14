@@ -149,6 +149,64 @@ defmodule Eclaw.LLM do
         },
         "required" => ["url"]
       }
+    },
+    %{
+      "name" => "web_search",
+      "description" =>
+        "Search the web using DuckDuckGo and return results. " <>
+          "Use this for real-time information: prices, news, weather, current events, etc.",
+      "input_schema" => %{
+        "type" => "object",
+        "properties" => %{
+          "query" => %{
+            "type" => "string",
+            "description" => "The search query"
+          }
+        },
+        "required" => ["query"]
+      }
+    },
+    %{
+      "name" => "store_memory",
+      "description" =>
+        "Save important information to persistent memory for future sessions. " <>
+          "Use this to remember user preferences, contacts, personal info, nicknames, etc. " <>
+          "Examples: 'wife is Thao Phuong on Messenger', 'user prefers Vietnamese', 'default warehouse is HCM'.",
+      "input_schema" => %{
+        "type" => "object",
+        "properties" => %{
+          "key" => %{
+            "type" => "string",
+            "description" => "Short identifier for this memory (e.g. 'wife_contact', 'language_pref')"
+          },
+          "content" => %{
+            "type" => "string",
+            "description" => "The information to remember"
+          },
+          "type" => %{
+            "type" => "string",
+            "enum" => ["fact", "preference", "context"],
+            "description" => "Memory type: fact (contacts, names), preference (settings), context (situational)"
+          }
+        },
+        "required" => ["key", "content"]
+      }
+    },
+    %{
+      "name" => "recall_memory",
+      "description" =>
+        "Search persistent memory for previously stored information. " <>
+          "Use this to look up user contacts, preferences, or any previously saved facts.",
+      "input_schema" => %{
+        "type" => "object",
+        "properties" => %{
+          "query" => %{
+            "type" => "string",
+            "description" => "Search query (e.g. 'wife', 'messenger contact', 'language')"
+          }
+        },
+        "required" => ["query"]
+      }
     }
   ]
 
