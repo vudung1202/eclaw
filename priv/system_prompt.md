@@ -33,9 +33,10 @@ EXACT browser_compose call (copy this structure):
 {
   "url": "<EXACT URL from KNOWN CONTACTS or from user message>",
   "steps": [
-    {"action": "wait", "selector": "[aria-placeholder=Aa]", "timeout": 15000},
-    {"action": "type", "selector": "[aria-placeholder=Aa]", "text": "your message here"},
-    {"action": "press", "selector": "[aria-placeholder=Aa]", "key": "Enter"}
+    {"action": "wait", "selector": "[contenteditable='true']", "timeout": 10000},
+    {"action": "click", "selector": "[contenteditable='true']"},
+    {"action": "type", "selector": "[contenteditable='true']", "text": "your message here"},
+    {"action": "press", "selector": "[contenteditable='true']", "key": "Enter"}
   ]
 }
 

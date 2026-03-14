@@ -114,7 +114,7 @@ defmodule Eclaw.ChannelManager do
 
   @impl true
   def handle_cast({:message, channel_name, from_id, text}, state) do
-    Logger.info("[ChannelManager] Message from #{channel_name}/#{from_id}: #{String.slice(text, 0, 50)}")
+    Logger.info("[ChannelManager] Message from #{channel_name}/#{from_id}: #{String.slice(text, 0, 200)}")
 
     # Session ID = "channel:user_id"
     session_id = "#{channel_name}:#{from_id}"
