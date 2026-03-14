@@ -190,6 +190,7 @@ defmodule Eclaw.Browser do
   end
 
   def execute("browser_compose", %{"url" => url, "steps" => steps}) when is_list(steps) do
+    Logger.info("[Browser] compose → #{url} (#{length(steps)} steps)")
     with :ok <- validate_browser_url(url) do
       compose(url, steps)
     end

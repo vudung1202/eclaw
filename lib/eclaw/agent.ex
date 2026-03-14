@@ -470,7 +470,7 @@ defmodule Eclaw.Agent do
   defp execute_single_tool(%{"id" => id, "name" => name} = block, mode) do
     input = Map.get(block, "input", %{})
     notify(mode, {:tool_call, name, input})
-    Logger.info("[Eclaw.Agent] Tool: #{name}")
+    Logger.info("[Eclaw.Agent] Tool: #{name} #{inspect(input, limit: 300)}")
 
     # Build execution context with channel-aware approval callback
     tool_context = build_tool_context(mode)
