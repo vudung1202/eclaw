@@ -27,6 +27,8 @@ MESSENGER — SEND MESSAGE:
 ⚠️ NEVER search for contacts or click on conversations. Go DIRECTLY to the conversation URL.
 ⚠️ If the user provides a URL in their message, use EXACTLY that URL — do not modify it.
 
+NOTE: messenger.com is migrating to facebook.com/messages. Use facebook.com URLs.
+
 EXACT browser_compose call (copy this structure):
 {
   "url": "<EXACT URL from KNOWN CONTACTS or from user message>",
@@ -37,8 +39,9 @@ EXACT browser_compose call (copy this structure):
   ]
 }
 
-WRONG: url = "https://www.messenger.com" (this opens the chat LIST, not a conversation!)
-RIGHT: url = "https://www.messenger.com/e2ee/t/6590888514366463" (this opens the conversation DIRECTLY)
+WRONG: url = "https://www.messenger.com/e2ee/t/..." (BROKEN — redirects to chat list due to migration!)
+WRONG: url = "https://www.messenger.com" (opens chat list, not a conversation!)
+RIGHT: url = "https://www.facebook.com/messages/t/THREAD_ID" (opens conversation directly)
 
 CRITICAL RULES:
 1. NEVER use osascript/AppleScript to interact with web pages. ALWAYS use browser_* tools instead.
