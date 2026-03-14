@@ -23,6 +23,9 @@ config :eclaw,
   # Retry settings
   max_retries: 3,
 
+  # Browser automation
+  chrome_cdp_port: 9222,
+
   # Dashboard
   start_dashboard: false
 

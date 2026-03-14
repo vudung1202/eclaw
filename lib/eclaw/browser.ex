@@ -337,7 +337,6 @@ defmodule Eclaw.Browser do
     (async () => {
       const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, {
         headless: false,
-        channel: 'chrome',
         viewport: { width: 1280, height: 800 }
       });
       const page = context.pages()[0] || await context.newPage();
@@ -401,7 +400,8 @@ defmodule Eclaw.Browser do
     """)
   end
 
-  # Common Playwright script wrapper — uses persistent profile for session reuse.
+  # Common Playwright script wrapper — uses persistent Chromium profile for session reuse.
+  # Login once via browser_login, then all subsequent calls reuse saved cookies.
   defp wrap_playwright_script(url, action_code) do
     profile_dir = browser_profile_dir()
     navigate_line = if url, do: "await page.goto(#{js_string_literal(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });", else: ""
@@ -409,7 +409,7 @@ defmodule Eclaw.Browser do
     """
     const { chromium } = require('playwright');
     (async () => {
-      const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, { headless: true, channel: 'chrome' });
+      const context = await chromium.launchPersistentContext(#{js_string_literal(profile_dir)}, { headless: true });
       const page = context.pages()[0] || await context.newPage();
       #{navigate_line}
       #{action_code}
