@@ -254,11 +254,35 @@ defmodule Eclaw.Browser do
       // Wait for page to be interactive
       await page.waitForFunction(() => (document.body.innerText || '').trim().length > 10, { timeout: 10000 }).catch(() => {});
 
-      #{action_lines}
+      // Debug: log current URL and page title
+      console.log('PAGE_URL: ' + page.url());
+      console.log('PAGE_TITLE: ' + await page.title());
 
-      // Return final page text as confirmation
+      try {
+        #{action_lines}
+        console.log('COMPOSE_OK');
+      } catch (stepErr) {
+        // On step failure, capture page state for debugging
+        console.log('STEP_ERROR: ' + stepErr.message);
+        const html = await page.content();
+        // Log available input-like elements for debugging
+        const inputs = await page.evaluate(() => {
+          const els = document.querySelectorAll('[contenteditable], [role="textbox"], textarea, input[type="text"], [aria-label]');
+          return Array.from(els).slice(0, 10).map(el => {
+            const tag = el.tagName.toLowerCase();
+            const role = el.getAttribute('role') || '';
+            const placeholder = el.getAttribute('aria-placeholder') || el.getAttribute('placeholder') || '';
+            const label = el.getAttribute('aria-label') || '';
+            const ce = el.getAttribute('contenteditable') || '';
+            return `<${tag} role="${role}" placeholder="${placeholder}" aria-label="${label}" contenteditable="${ce}">`;
+          });
+        });
+        console.log('AVAILABLE_INPUTS: ' + JSON.stringify(inputs));
+      }
+
+      // Return final page text
       const result = await page.evaluate(() => document.body.innerText);
-      console.log(result.substring(0, 3000));
+      console.log(result.substring(0, 2000));
     """)
 
     run_playwright_script(script, 60_000)
