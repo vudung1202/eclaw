@@ -60,6 +60,15 @@ defmodule Eclaw.Config do
   @spec command_timeout() :: pos_integer()
   def command_timeout, do: get(:command_timeout, 30_000)
 
+  @spec cache_ttl_web_fetch() :: pos_integer()
+  def cache_ttl_web_fetch, do: get(:cache_ttl_web_fetch, 300_000)
+
+  @spec cache_ttl_web_search() :: pos_integer()
+  def cache_ttl_web_search, do: get(:cache_ttl_web_search, 600_000)
+
+  @spec routing_enabled() :: boolean()
+  def routing_enabled, do: get(:routing_enabled, false)
+
   @spec provider() :: atom()
   def provider, do: get(:provider, :anthropic)
 

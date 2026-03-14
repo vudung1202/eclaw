@@ -23,6 +23,12 @@ defmodule Eclaw.Application do
       # Persistent memory (DETS-backed)
       Eclaw.Memory,
 
+      # Conversation history (DETS-backed)
+      Eclaw.History,
+
+      # Tool result cache (ETS-backed, TTL expiration)
+      Eclaw.Cache,
+
       # Plugin tool registry
       Eclaw.ToolRegistry,
 
@@ -32,6 +38,9 @@ defmodule Eclaw.Application do
       # Channel adapter supervisor
       {DynamicSupervisor, strategy: :one_for_one, name: Eclaw.ChannelSupervisor},
       Eclaw.ChannelManager,
+
+      # Scheduled task manager (DETS-backed, fires via ChannelManager)
+      Eclaw.Scheduler,
 
       # MCP client — external tool integration
       Eclaw.MCP,
@@ -66,6 +75,9 @@ defmodule Eclaw.Application do
 
   defp register_plugins do
     # Browser tools are auto-registered by ToolRegistry.init
+
+    # Register schedule management tool
+    Eclaw.ToolRegistry.register(Eclaw.Tools.Schedule)
 
     # Register MCP tools (discovered from connected servers)
     mcp_tools = Eclaw.MCP.tool_definitions()

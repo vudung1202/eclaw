@@ -39,10 +39,90 @@ defmodule Eclaw.Channels.Telegram do
   @impl Eclaw.Channel
   def handle_incoming(%{"message" => message}) do
     chat_id = get_in(message, ["chat", "id"])
-    text = message["text"] || ""
     from = get_in(message, ["from", "id"])
+    from_id = "#{from || chat_id}"
 
-    {:ok, %{from: "#{from || chat_id}", text: text}}
+    cond do
+      # Photo message — take last element (highest resolution)
+      is_list(message["photo"]) and message["photo"] != [] ->
+        photo = List.last(message["photo"])
+        file_id = photo["file_id"]
+        caption = message["caption"] || ""
+        Logger.debug("[Telegram] Photo received from #{from_id}, file_id: #{file_id}")
+
+        case download_file(file_id) do
+          {:ok, binary} ->
+            base64 = Base.encode64(binary)
+            attachment = %{type: :image, data: base64, mime: "image/jpeg"}
+            {:ok, %{from: from_id, text: caption, attachments: [attachment]}}
+
+          {:error, reason} ->
+            Logger.error("[Telegram] Failed to download photo: #{inspect(reason)}")
+            {:ok, %{from: from_id, text: caption <> "\n[Photo could not be downloaded]"}}
+        end
+
+      # Document/file attachment
+      is_map(message["document"]) ->
+        doc = message["document"]
+        file_id = doc["file_id"]
+        mime_type = doc["mime_type"] || "application/octet-stream"
+        caption = message["caption"] || ""
+        Logger.debug("[Telegram] Document received from #{from_id}, mime: #{mime_type}, file_id: #{file_id}")
+
+        # Only process image documents for vision
+        if String.starts_with?(mime_type, "image/") do
+          case download_file(file_id) do
+            {:ok, binary} ->
+              base64 = Base.encode64(binary)
+              attachment = %{type: :image, data: base64, mime: mime_type}
+              {:ok, %{from: from_id, text: caption, attachments: [attachment]}}
+
+            {:error, reason} ->
+              Logger.error("[Telegram] Failed to download document: #{inspect(reason)}")
+              {:ok, %{from: from_id, text: caption <> "\n[File could not be downloaded]"}}
+          end
+        else
+          {:ok, %{from: from_id, text: caption <> "\n[Unsupported file type: #{mime_type}]"}}
+        end
+
+      # Voice note (OGG/Opus)
+      is_map(message["voice"]) ->
+        file_id = get_in(message, ["voice", "file_id"])
+        caption = message["caption"] || ""
+        Logger.debug("[Telegram] Voice message received from #{from_id}, file_id: #{file_id}")
+
+        case download_file(file_id) do
+          {:ok, binary} ->
+            attachment = %{type: :voice, data: binary, mime: "audio/ogg"}
+            {:ok, %{from: from_id, text: caption, attachments: [attachment]}}
+
+          {:error, reason} ->
+            Logger.warning("[Telegram] Failed to download voice: #{inspect(reason)}")
+            {:ok, %{from: from_id, text: "[Voice message - download failed]"}}
+        end
+
+      # Audio file (MP3, etc.)
+      is_map(message["audio"]) ->
+        file_id = get_in(message, ["audio", "file_id"])
+        mime = get_in(message, ["audio", "mime_type"]) || "audio/mpeg"
+        caption = message["caption"] || ""
+        Logger.debug("[Telegram] Audio file received from #{from_id}, mime: #{mime}, file_id: #{file_id}")
+
+        case download_file(file_id) do
+          {:ok, binary} ->
+            attachment = %{type: :voice, data: binary, mime: mime}
+            {:ok, %{from: from_id, text: caption, attachments: [attachment]}}
+
+          {:error, reason} ->
+            Logger.warning("[Telegram] Failed to download audio: #{inspect(reason)}")
+            {:ok, %{from: from_id, text: "[Audio message - download failed]"}}
+        end
+
+      # Regular text message
+      true ->
+        text = message["text"] || ""
+        {:ok, %{from: from_id, text: text}}
+    end
   end
 
   def handle_incoming(_), do: {:error, :no_message}
@@ -183,19 +263,21 @@ defmodule Eclaw.Channels.Telegram do
   # ── Update processing ──────────────────────────────────────────
 
   defp process_update(update) do
-    with {:ok, %{from: from_id, text: text}} <- handle_incoming(update),
-         true <- authorized_user?(from_id) || {:unauthorized, from_id} do
-      text = String.trim(text)
+    with {:ok, parsed} <- handle_incoming(update),
+         true <- authorized_user?(parsed.from) || {:unauthorized, parsed.from} do
+      text = String.trim(parsed.text)
+      attachments = Map.get(parsed, :attachments, [])
 
-      if text != "" do
+      # Messages with attachments are always forwarded (even with empty caption)
+      if text != "" or attachments != [] do
         case text do
           "/start" ->
-            send_text_direct(from_id, "Hello! I'm Eclaw, your AI assistant. Ask me anything!")
+            send_text_direct(parsed.from, "Hello! I'm Eclaw, your AI assistant. Ask me anything!")
 
           "/reset" ->
-            session_id = "telegram:#{from_id}"
+            session_id = "telegram:#{parsed.from}"
             Eclaw.SessionManager.stop(session_id)
-            send_text_direct(from_id, "Conversation reset. Starting fresh!")
+            send_text_direct(parsed.from, "Conversation reset. Starting fresh!")
 
           "/help" ->
             help_text = """
@@ -209,10 +291,10 @@ defmodule Eclaw.Channels.Telegram do
             The agent can execute bash commands, read/write files, and search files.
             """
 
-            send_text_direct(from_id, help_text)
+            send_text_direct(parsed.from, help_text)
 
           _ ->
-            Eclaw.ChannelManager.handle_message(:telegram, from_id, text)
+            Eclaw.ChannelManager.handle_message(:telegram, parsed.from, text, attachments)
         end
       end
     else
@@ -238,6 +320,41 @@ defmodule Eclaw.Channels.Telegram do
 
       allowed when is_list(allowed) ->
         to_string(user_id) in allowed
+    end
+  end
+
+  # ── File download ────────────────────────────────────────────────
+
+  defp download_file(file_id) do
+    token = Application.get_env(:eclaw, :telegram_token, "")
+    url = "#{@base_url}#{token}/getFile"
+    body = Jason.encode!(%{file_id: file_id})
+
+    case Req.post(url, body: body, headers: [{"content-type", "application/json"}], receive_timeout: 10_000) do
+      {:ok, %{status: 200, body: %{"ok" => true, "result" => %{"file_path" => file_path}}}} ->
+        download_url = "https://api.telegram.org/file/bot#{token}/#{file_path}"
+        Logger.debug("[Telegram] Downloading file from #{file_path}")
+
+        case Req.get(download_url, receive_timeout: 30_000) do
+          {:ok, %{status: 200, body: binary}} when is_binary(binary) ->
+            Logger.debug("[Telegram] Downloaded #{byte_size(binary)} bytes")
+            {:ok, binary}
+
+          {:ok, %{status: status}} ->
+            {:error, "HTTP #{status}"}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:ok, %{status: 200, body: %{"ok" => false, "description" => desc}}} ->
+        {:error, desc}
+
+      {:ok, %{status: status}} ->
+        {:error, "HTTP #{status}"}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

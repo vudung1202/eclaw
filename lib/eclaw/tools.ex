@@ -9,7 +9,7 @@ defmodule Eclaw.Tools do
 
   require Logger
 
-  alias Eclaw.{Config, Context, Security}
+  alias Eclaw.{Cache, Config, Context, Security}
 
   # ── Public API ─────────────────────────────────────────────────────
 
@@ -313,7 +313,9 @@ defmodule Eclaw.Tools do
         "Security error: Access to internal/private network addresses is blocked"
 
       true ->
-        do_web_fetch(url)
+        Cache.get_or_compute({:web_fetch, url}, Config.cache_ttl_web_fetch(), fn ->
+          do_web_fetch(url)
+        end)
     end
   end
 
@@ -395,6 +397,12 @@ defmodule Eclaw.Tools do
 
   @spec web_search(String.t()) :: String.t()
   def web_search(query) do
+    Cache.get_or_compute({:web_search, query}, Config.cache_ttl_web_search(), fn ->
+      do_web_search(query)
+    end)
+  end
+
+  defp do_web_search(query) do
     Logger.info("[Eclaw.Tools] search: #{query}")
     encoded_query = URI.encode_www_form(query)
     url = "https://html.duckduckgo.com/html/?q=#{encoded_query}"
