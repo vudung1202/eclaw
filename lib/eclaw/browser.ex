@@ -260,6 +260,8 @@ defmodule Eclaw.Browser do
 
       try {
         #{action_lines}
+        // Wait for pending network requests (message send, form submit, etc.)
+        await page.waitForTimeout(3000);
         console.log('COMPOSE_OK');
       } catch (stepErr) {
         // On step failure, capture page state for debugging
