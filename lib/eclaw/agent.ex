@@ -362,19 +362,22 @@ defmodule Eclaw.Agent do
         {:error, :token_rate_limited} ->
           Logger.warning("[Eclaw.Agent] Token rate limited (retry #{rate_limit_retries})")
 
-          if rate_limit_retries >= 2 do
+          if rate_limit_retries >= 5 do
             {:error, :context_too_large}
           else
+            # Escalating backoff: 3s, 5s, 10s, 20s, 30s
+            delay = Enum.at([3_000, 5_000, 10_000, 20_000, 30_000], rate_limit_retries, 30_000)
+
             case Context.force_compact(messages, system) do
               {:ok, compacted} when compacted == messages ->
-                # Already minimal — wait for rate limit window to reset (60s)
-                notify(mode, {:status, "Rate limited. Waiting 60s for reset..."})
-                Process.sleep(60_000)
+                # Already minimal — wait for rate limit window to reset
+                notify(mode, {:status, "Rate limited. Retrying in #{div(delay, 1000)}s..."})
+                Process.sleep(delay)
                 agent_loop(compacted, system, iteration, mode, llm_opts, usage_acc, rate_limit_retries + 1)
 
               {:ok, compacted} ->
-                notify(mode, {:status, "Rate limited. Compacting and retrying in 15s..."})
-                Process.sleep(15_000)
+                notify(mode, {:status, "Rate limited. Compacting and retrying in #{div(delay, 1000)}s..."})
+                Process.sleep(delay)
                 agent_loop(compacted, system, iteration + 1, mode, llm_opts, usage_acc, rate_limit_retries + 1)
             end
           end

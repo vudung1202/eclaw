@@ -93,35 +93,34 @@ defmodule Eclaw.ToolRegistry do
   @impl true
   def init(_opts) do
     # tools: %{name => %{type: :module | :multi | :definition, ...}}
+    # Auto-register built-in plugins after init
+    send(self(), :auto_register_plugins)
     {:ok, %{tools: %{}}}
   end
 
   @impl true
+  def handle_info(:auto_register_plugins, state) do
+    # Register Browser plugin
+    new_state =
+      if Code.ensure_loaded?(Eclaw.Browser) do
+        case do_register(Eclaw.Browser, state) do
+          {:ok, updated} -> updated
+          :error -> state
+        end
+      else
+        state
+      end
+
+    {:noreply, new_state}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl true
   def handle_call({:register, module}, _from, state) do
-    cond do
-      # Multi-tool module (e.g. Browser with tools/0 and execute/2)
-      function_exported?(module, :tools, 0) and function_exported?(module, :execute, 2) ->
-        tool_defs = module.tools()
-        new_tools =
-          Enum.reduce(tool_defs, state.tools, fn tool_def, acc ->
-            name = tool_def["name"]
-            Logger.info("[Eclaw.ToolRegistry] Registered multi-tool: #{name}")
-            Map.put(acc, name, %{type: :multi, module: module, definition: tool_def})
-          end)
-
-        {:reply, :ok, %{state | tools: new_tools}}
-
-      # Single-tool module (standard ToolBehaviour)
-      function_exported?(module, :name, 0) and
-        function_exported?(module, :description, 0) and
-        function_exported?(module, :input_schema, 0) and
-        function_exported?(module, :execute, 1) ->
-        name = module.name()
-        Logger.info("[Eclaw.ToolRegistry] Registered plugin tool: #{name}")
-        {:reply, :ok, put_in(state, [:tools, name], %{type: :module, module: module})}
-
-      true ->
-        {:reply, {:error, :invalid_tool_module}, state}
+    case do_register(module, state) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      :error -> {:reply, {:error, :invalid_tool_module}, state}
     end
   end
 
@@ -173,6 +172,33 @@ defmodule Eclaw.ToolRegistry do
   end
 
   # ── Private ────────────────────────────────────────────────────────
+
+  # Shared registration logic used by both handle_call and auto-register
+  defp do_register(module, state) do
+    cond do
+      function_exported?(module, :tools, 0) and function_exported?(module, :execute, 2) ->
+        tool_defs = module.tools()
+        new_tools =
+          Enum.reduce(tool_defs, state.tools, fn tool_def, acc ->
+            name = tool_def["name"]
+            Logger.info("[Eclaw.ToolRegistry] Registered multi-tool: #{name}")
+            Map.put(acc, name, %{type: :multi, module: module, definition: tool_def})
+          end)
+
+        {:ok, %{state | tools: new_tools}}
+
+      function_exported?(module, :name, 0) and
+        function_exported?(module, :description, 0) and
+        function_exported?(module, :input_schema, 0) and
+        function_exported?(module, :execute, 1) ->
+        name = module.name()
+        Logger.info("[Eclaw.ToolRegistry] Registered plugin tool: #{name}")
+        {:ok, put_in(state, [:tools, name], %{type: :module, module: module})}
+
+      true ->
+        :error
+    end
+  end
 
   # Route MCP tools: name format is "mcp::server::tool"
   defp execute_mcp_tool(tool_name, input) do

@@ -2,13 +2,13 @@
 
 Autonomous AI Agent built with Elixir/OTP. Inspired by [OpenClaw](https://github.com/openclaw/openclaw).
 
-Eclaw connects to LLM APIs (Anthropic Claude, OpenAI GPT), executes tools on your system, and manages multi-turn conversations — all backed by OTP supervision trees, persistent memory, and a real-time LiveView dashboard.
+Eclaw connects to LLM APIs (Anthropic Claude, OpenAI GPT, Google Gemini), executes tools on your system, and manages multi-turn conversations — all backed by OTP supervision trees, persistent memory, and a real-time LiveView dashboard.
 
 ## Features
 
 - **Agent Loop** — send prompt → LLM responds → calls tools if needed → loops until done
-- **6 Built-in Tools** — `execute_bash`, `read_file`, `write_file`, `list_directory`, `search_files`, `web_fetch`
-- **Browser Automation** — Playwright-based tools: navigate, screenshot, click, type, evaluate JS
+- **7 Built-in Tools** — `execute_bash`, `read_file`, `write_file`, `list_directory`, `search_files`, `web_fetch`, `web_search`
+- **Browser Automation** — Playwright-based tools: navigate, screenshot, click, type, evaluate JS, compose (multi-action), login (persistent sessions)
 - **Streaming** — real-time text output via SSE (Server-Sent Events)
 - **Multi-provider** — Anthropic Claude, OpenAI GPT, and Google Gemini, switchable via env var
 - **Per-user Sessions** — each user gets an isolated Agent with idle auto-cleanup (30 min)
@@ -28,6 +28,7 @@ Eclaw connects to LLM APIs (Anthropic Claude, OpenAI GPT), executes tools on you
 
 - Elixir ~> 1.18
 - Erlang/OTP 27+
+- Node.js 18+ (for browser automation)
 - An Anthropic, OpenAI, or Google Gemini API key
 
 ## Quick Start
@@ -35,6 +36,9 @@ Eclaw connects to LLM APIs (Anthropic Claude, OpenAI GPT), executes tools on you
 ```bash
 git clone <repo-url> eclaw && cd eclaw
 mix deps.get
+
+# Optional: install Playwright for browser automation
+npm install playwright && npx playwright install chromium
 
 export ANTHROPIC_API_KEY="sk-ant-..."
 mix eclaw
@@ -176,6 +180,67 @@ All settings via environment variables:
 | `SECRET_KEY_BASE` | (dev default) | Phoenix secret key base (set in production) |
 | `ECLAW_SESSION_SALT` | (dev default) | Cookie session signing salt |
 | `ECLAW_SIGNING_SALT` | (dev default) | LiveView signing salt |
+
+## Browser Automation
+
+Eclaw includes Playwright-based browser tools with persistent cookie sessions.
+
+### Setup
+
+```bash
+npm install playwright
+npx playwright install chromium
+```
+
+### Login (one-time)
+
+Open a visible browser to log in manually — cookies are saved for all future headless calls:
+
+```elixir
+iex> Eclaw.chat("Login to Messenger")
+# A browser window opens → log in manually → cookies saved to ~/.eclaw/browser-profile/
+```
+
+### Browser Tools
+
+| Tool | Description |
+|------|-------------|
+| `browser_navigate` | Open URL, get page text (JS-rendered) |
+| `browser_screenshot` | Take screenshot of page or element |
+| `browser_click` | Click element by CSS selector |
+| `browser_type` | Type text into input field (supports Unicode) |
+| `browser_evaluate` | Run JavaScript in page context |
+| `browser_compose` | Run multiple actions in one browser session |
+| `browser_login` | Open visible browser for manual login |
+
+### browser_compose
+
+Run multiple actions in a single browser session. This is critical for workflows like sending messages, where state must persist across steps:
+
+```elixir
+# The agent uses browser_compose internally:
+# 1. Navigate to URL
+# 2. Wait for element
+# 3. Type message
+# 4. Press Enter
+```
+
+## System Prompt Customization
+
+The system prompt is loaded from two files:
+
+1. **Template** (`priv/system_prompt.md`) — shared, version-controlled
+2. **Custom** (`~/.eclaw/system_prompt.md`) — per-user, not in git
+
+The custom file is loaded after the template. Use it for personal contacts, preferences, and workflows:
+
+```markdown
+# ~/.eclaw/system_prompt.md
+KNOWN CONTACTS:
+- Name = chat name "Display Name", URL: https://www.messenger.com/e2ee/t/THREAD_ID
+```
+
+Placeholders `{{cwd}}` and `{{workspace}}` are replaced at runtime.
 
 ## Plugin Tools
 
