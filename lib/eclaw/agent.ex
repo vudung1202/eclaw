@@ -16,7 +16,7 @@ defmodule Eclaw.Agent do
   use GenServer
   require Logger
 
-  alias Eclaw.{Config, Context, Events, Memory, Retry, Skills, Telemetry}
+  alias Eclaw.{Config, Context, Events, History, Memory, Retry, Router, Skills, Telemetry}
 
   @idle_timeout :timer.minutes(30)
 
@@ -49,11 +49,11 @@ defmodule Eclaw.Agent do
   end
 
   @doc "Non-streaming: send prompt and wait for full response (singleton)."
-  @spec chat(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec chat(String.t() | list()) :: {:ok, String.t()} | {:error, term()}
   def chat(prompt), do: chat(__MODULE__, prompt)
 
   @doc "Non-streaming: send prompt and wait for full response (pid/name)."
-  @spec chat(pid() | atom() | GenServer.name(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec chat(pid() | atom() | GenServer.name(), String.t() | list()) :: {:ok, String.t()} | {:error, term()}
   def chat(server, prompt) do
     GenServer.call(server, {:chat, prompt}, :infinity)
   end
@@ -227,6 +227,13 @@ defmodule Eclaw.Agent do
       cost: state.usage.cost + usage_delta.cost
     }
 
+    # Save conversation history asynchronously (skip for singleton CLI agent)
+    if state.session_id do
+      Task.Supervisor.start_child(Eclaw.TaskSupervisor, fn ->
+        History.save(state.session_id, messages)
+      end)
+    end
+
     {:noreply, %{state | messages: messages, usage: new_usage, busy: false, agent_task_ref: nil, agent_from: nil}, idle_timeout(state.session_id)}
   end
 
@@ -273,25 +280,34 @@ defmodule Eclaw.Agent do
   end
 
   defp run_agent(prompt, state, mode) do
+    # Accept both plain string prompts and structured content blocks (e.g. vision)
     user_message = %{"role" => "user", "content" => prompt}
     messages = state.messages ++ [user_message]
 
+    # Extract text for memory/routing — use raw string or extract from content blocks
+    prompt_text = extract_prompt_text(prompt)
+
     # Inject memory + skills context into system prompt
-    memory_context = Memory.to_context(prompt, 5)
-    skill_context = Skills.build_context(prompt)
+    memory_context = Memory.to_context(prompt_text, 5)
+    skill_context = Skills.build_context(prompt_text)
 
     system = state.system <> memory_context <> skill_context
 
     # Build LLM opts (model override if set)
     llm_opts = if state.model, do: [model: state.model], else: []
 
+    # Multi-model routing: select optimal model at iteration 0
+    llm_opts = maybe_route_model(prompt_text, llm_opts)
+
     # Check context window before calling LLM
     messages = maybe_compact(messages, system, mode, state.model)
 
     # Wrap the agent loop in a telemetry span — return the inner result
     # so telemetry can correctly detect {:ok, _} vs {:error, _}
+    prompt_length = if is_binary(prompt), do: String.length(prompt), else: String.length(prompt_text)
+
     loop_result =
-      Telemetry.span([:eclaw, :agent, :chat], %{prompt_length: String.length(prompt), session_id: state.session_id, iterations: 0}, fn ->
+      Telemetry.span([:eclaw, :agent, :chat], %{prompt_length: prompt_length, session_id: state.session_id, iterations: 0}, fn ->
         agent_loop(messages, system, 0, mode, llm_opts)
       end)
 
@@ -328,6 +344,23 @@ defmodule Eclaw.Agent do
       end
     else
       messages
+    end
+  end
+
+  # ── Model routing ─────────────────────────────────────────────────
+
+  defp maybe_route_model(prompt, llm_opts) do
+    if Config.routing_enabled() do
+      routed_model = Router.select_model(prompt, llm_opts)
+      default_model = Config.model()
+
+      if routed_model != default_model do
+        Logger.info("[Eclaw.Agent] Router selected model: #{routed_model} (default: #{default_model})")
+      end
+
+      Keyword.put(llm_opts, :model, routed_model)
+    else
+      llm_opts
     end
   end
 
@@ -500,6 +533,17 @@ defmodule Eclaw.Agent do
   defp build_tool_context({:stream, _on_chunk}), do: %{channel: :cli}
 
   # ── Helpers ───────────────────────────────────────────────────────
+
+  # Extract plain text from prompt — handles both string and content block list
+  defp extract_prompt_text(prompt) when is_binary(prompt), do: prompt
+
+  defp extract_prompt_text(prompt) when is_list(prompt) do
+    prompt
+    |> Enum.filter(fn block -> is_map(block) and block["type"] == "text" end)
+    |> Enum.map_join(" ", fn block -> block["text"] end)
+  end
+
+  defp extract_prompt_text(_), do: ""
 
   defp extract_text(content_blocks), do: Context.extract_text(content_blocks)
 

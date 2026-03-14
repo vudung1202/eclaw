@@ -47,9 +47,17 @@ defmodule Eclaw.Channel do
   @callback send_message(channel_id :: String.t(), text :: String.t(), opts :: keyword()) ::
               {:ok, term()} | {:error, term()}
 
-  @doc "Parse incoming message from platform-specific format."
+  @doc """
+  Parse incoming message from platform-specific format.
+
+  Returns `{:ok, parsed}` where `parsed` contains:
+  - `:from` — user/chat identifier (string)
+  - `:text` — message text (string)
+  - `:attachments` — (optional) list of `%{type: :image, data: base64_string, mime: mime_type}`
+  """
   @callback handle_incoming(raw_message :: term()) ::
-              {:ok, %{from: String.t(), text: String.t()}} | {:error, term()}
+              {:ok, %{required(:from) => String.t(), required(:text) => String.t(), optional(:attachments) => list()}}
+              | {:error, term()}
 
   @doc "Send typing indicator (optional)."
   @callback send_typing(channel_id :: String.t()) :: :ok

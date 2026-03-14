@@ -45,6 +45,10 @@ if provider = System.get_env("ECLAW_PROVIDER") do
   config :eclaw, provider: provider_atom
 end
 
+if System.get_env("ECLAW_ROUTING") == "true" do
+  config :eclaw, routing_enabled: true
+end
+
 if budget = System.get_env("ECLAW_TOKEN_BUDGET") do
   case Integer.parse(budget) do
     {val, ""} -> config :eclaw, input_token_budget: val
