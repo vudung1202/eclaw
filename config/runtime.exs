@@ -93,3 +93,36 @@ end
 if System.get_env("ECLAW_API_OPEN") == "true" do
   config :eclaw, api_open: true
 end
+
+# ── MCP Servers ─────────────────────────────────────────────────
+
+if mcp_json = System.get_env("ECLAW_MCP_SERVERS") do
+  case Jason.decode(mcp_json) do
+    {:ok, servers} when is_list(servers) ->
+      # Convert string-keyed maps to atom-keyed maps for consistency
+      parsed =
+        Enum.map(servers, fn server ->
+          server
+          |> Enum.map(fn
+            {"name", v} -> {:name, v}
+            {"transport", v} -> {:transport, v}
+            {"command", v} -> {:command, v}
+            {"args", v} -> {:args, v}
+            {"url", v} -> {:url, v}
+            {"headers", v} -> {:headers, v}
+            {"env", v} -> {:env, v}
+            {_k, _v} -> nil
+          end)
+          |> Enum.reject(&is_nil/1)
+          |> Map.new()
+        end)
+
+      config :eclaw, mcp_servers: parsed
+
+    {:ok, _} ->
+      IO.puts(:stderr, "[Eclaw] Warning: ECLAW_MCP_SERVERS must be a JSON array, ignoring")
+
+    {:error, reason} ->
+      IO.puts(:stderr, "[Eclaw] Warning: ECLAW_MCP_SERVERS is not valid JSON (#{inspect(reason)}), ignoring")
+  end
+end

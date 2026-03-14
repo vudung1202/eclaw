@@ -37,7 +37,6 @@ defmodule Eclaw.MCP.HttpTransport do
     :post_endpoint,
     :sse_task,
     :headers,
-    :parent,
     pending: %{},
     next_id: 1,
     connected: false,
@@ -79,8 +78,7 @@ defmodule Eclaw.MCP.HttpTransport do
 
     state = %__MODULE__{
       url: url,
-      headers: headers,
-      parent: self()
+      headers: headers
     }
 
     # Defer connection to handle_continue
@@ -156,7 +154,7 @@ defmodule Eclaw.MCP.HttpTransport do
 
   # SSE task exited
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, reason}, %{sse_task: {pid, _ref}} = state) do
+  def handle_info({:DOWN, ref, :process, pid, reason}, %{sse_task: {pid, ref}} = state) do
     Logger.warning("[Eclaw.MCP.HttpTransport] SSE connection lost: #{inspect(reason)}")
 
     # Reply to all pending requests with error
@@ -278,13 +276,13 @@ defmodule Eclaw.MCP.HttpTransport do
       Enum.reduce(lines, {"message", []}, fn line, {evt, data} ->
         cond do
           String.starts_with?(line, "event: ") ->
-            {String.trim_leading(line, "event: "), data}
+            {String.replace_prefix(line, "event: ", ""), data}
 
           String.starts_with?(line, "data: ") ->
-            {evt, [String.trim_leading(line, "data: ") | data]}
+            {evt, [String.replace_prefix(line, "data: ", "") | data]}
 
           String.starts_with?(line, "data:") ->
-            {evt, [String.trim_leading(line, "data:") | data]}
+            {evt, [String.replace_prefix(line, "data:", "") | data]}
 
           true ->
             {evt, data}
@@ -411,8 +409,9 @@ defmodule Eclaw.MCP.HttpTransport do
 
   defp normalize_url(url) when is_binary(url) do
     url = String.trim(url)
+    path = URI.parse(url).path || ""
 
-    if String.ends_with?(url, @default_sse_path) or String.contains?(url, "/sse") do
+    if path == @default_sse_path or String.ends_with?(path, @default_sse_path) do
       url
     else
       String.trim_trailing(url, "/") <> @default_sse_path

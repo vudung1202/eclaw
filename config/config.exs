@@ -26,6 +26,9 @@ config :eclaw,
   # Browser automation
   chrome_cdp_port: 9222,
 
+  # MCP servers (auto-connected on startup)
+  mcp_servers: [],
+
   # Dashboard
   start_dashboard: false
 
