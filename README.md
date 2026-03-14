@@ -9,12 +9,16 @@ Eclaw connects to LLM APIs (Anthropic Claude, OpenAI GPT, Google Gemini), execut
 - **Agent Loop** — send prompt → LLM responds → calls tools if needed → loops until done
 - **7 Built-in Tools** — `execute_bash`, `read_file`, `write_file`, `list_directory`, `search_files`, `web_fetch`, `web_search`
 - **Browser Automation** — Playwright-based tools: navigate, screenshot, click, type, evaluate JS, compose (multi-action), login (persistent sessions)
+- **MCP Integration** — connect to external MCP servers via stdio or HTTP/SSE transports, auto-reconnect, runtime connect/disconnect, SSRF protection
+- **OpenClaw Skills** — 5,400+ community skills auto-indexed from [openclaw/skills](https://github.com/openclaw/skills) + [awesome-openclaw-skills](https://github.com/VoltAgent/awesome-openclaw-skills), agent-driven search and load
 - **Streaming** — real-time text output via SSE (Server-Sent Events)
 - **Multi-provider** — Anthropic Claude, OpenAI GPT, and Google Gemini, switchable via env var
+- **Multi-model Routing** — auto-route simple prompts to cheaper models (Haiku), complex to default
 - **Per-user Sessions** — each user gets an isolated Agent with idle auto-cleanup (30 min)
 - **Telegram Bot** — auto-start with long polling, per-user sessions, user allowlist, message splitting, Markdown
 - **Plugin System** — register custom tools at runtime via `Eclaw.ToolBehaviour`
 - **Persistent Memory** — DETS-backed storage with vector search (OpenAI embeddings), survives restarts
+- **Caching** — ETS-backed TTL cache for web_fetch/web_search results
 - **Context Management** — token budget, auto-compaction, rate limit protection, UTF-8 safe truncation
 - **Security** — tiered command approval (blocked/needs-approval/safe), SSRF protection, path traversal prevention with symlink resolution, secret redaction in logs
 - **Authentication** — HTTP Basic Auth (web UI), Bearer token (API), timing-safe comparison, default-deny
@@ -180,6 +184,66 @@ All settings via environment variables:
 | `SECRET_KEY_BASE` | (dev default) | Phoenix secret key base (set in production) |
 | `ECLAW_SESSION_SALT` | (dev default) | Cookie session signing salt |
 | `ECLAW_SIGNING_SALT` | (dev default) | LiveView signing salt |
+| `ECLAW_MCP_SERVERS` | `[]` | JSON array of MCP server configs (see MCP section) |
+
+## MCP (Model Context Protocol)
+
+Eclaw can connect to external [MCP](https://modelcontextprotocol.io/) servers to extend the agent's tools without writing code.
+
+### Transports
+
+- **stdio** — launch a local process, communicate via stdin/stdout JSON-RPC
+- **HTTP/SSE** — connect to a remote server via HTTP POST + Server-Sent Events
+
+### Configuration
+
+```bash
+export ECLAW_MCP_SERVERS='[
+  {"name": "filesystem", "transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]},
+  {"name": "remote", "transport": "http", "url": "http://localhost:3000/sse"}
+]'
+```
+
+Servers are auto-connected on startup. The agent discovers tools automatically and can call them like any other tool.
+
+### Runtime Management
+
+The agent can also connect/disconnect MCP servers at runtime via the `mcp_manage` tool:
+
+```
+eclaw> Connect to the GitHub MCP server at npx @modelcontextprotocol/server-github
+  ⚡ mcp_manage connect name="github" command="npx" args=["-y", "@modelcontextprotocol/server-github"]
+  → Connected. 15 tools discovered.
+```
+
+### Auto-Reconnect
+
+If a server disconnects, Eclaw automatically retries with exponential backoff (up to 10 attempts). SSRF protection blocks connections to private/internal IPs.
+
+## OpenClaw Skills
+
+Eclaw integrates with [OpenClaw](https://github.com/openclaw/skills) — a community registry of 5,400+ agent skills organized in 30 categories.
+
+### How it works
+
+1. On first startup, Eclaw clones two repos to `~/.eclaw/openclaw/`:
+   - `openclaw/skills` — actual SKILL.md definitions
+   - `VoltAgent/awesome-openclaw-skills` — curated search index
+2. An ETS-backed index is built from the awesome list
+3. The agent searches skills via the `skill_search` tool and loads SKILL.md content on-demand
+
+### Usage
+
+```
+eclaw> I need help writing Terraform configs
+  ⚡ skill_search search query="terraform"
+  → Found 5 skills:
+    - Terraform Expert (devops-wizard/terraform-expert) [devops]
+  ⚡ skill_search load author="devops-wizard" slug="terraform-expert"
+  → [loads SKILL.md instructions]
+```
+
+Skills are synced automatically. Run `skill_search sync` to force-update the repos.
 
 ## Browser Automation
 

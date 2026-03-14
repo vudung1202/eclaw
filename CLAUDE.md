@@ -42,7 +42,12 @@ Eclaw.Supervisor (rest_for_one)
 ├── Eclaw.Events (duplicate Registry for pub/sub)
 ├── Task.Supervisor (Eclaw.TaskSupervisor)
 ├── Eclaw.Memory (GenServer + DETS)
+├── Eclaw.Cache (ETS-backed TTL cache)
+├── Eclaw.History (DETS-backed session history)
 ├── Eclaw.ToolRegistry (GenServer)
+├── Eclaw.Scheduler (DETS-backed task scheduler)
+├── Eclaw.Skills.OpenClaw (GenServer + ETS skill index)
+├── Eclaw.MCP (GenServer — MCP client, stdio + HTTP/SSE)
 ├── DynamicSupervisor (Eclaw.SessionSupervisor, max_children: 100)
 ├── DynamicSupervisor (Eclaw.ChannelSupervisor)
 ├── Eclaw.ChannelManager (GenServer)
@@ -71,6 +76,10 @@ Eclaw.Supervisor (rest_for_one)
   - Telegram: user allowlist via `TELEGRAM_ALLOWED_USERS` (default-deny)
   - All comparisons use `Plug.Crypto.secure_compare` (timing-safe)
 - **Retry:** Exponential backoff with jitter. Retryable: 429 (4x delay), 500, 502, 503, 529. Max 3 retries, max 30s delay.
+- **MCP (Model Context Protocol):** `Eclaw.MCP` GenServer connects to external tool servers. Two transports: **stdio** (local process via Port) and **HTTP/SSE** (remote via `Eclaw.MCP.HttpTransport`). Auto-connects from config on startup, supports runtime `connect/disconnect` via `mcp_manage` tool. Auto-reconnect with exponential backoff (max 10 attempts). Tool names prefixed `mcp::server::tool`. SSRF check on HTTP URLs.
+- **OpenClaw skills:** `Eclaw.Skills.OpenClaw` GenServer manages 5,400+ skills from `openclaw/skills` + `awesome-openclaw-skills` repos. Auto-clones to `~/.eclaw/openclaw/` on first startup (parallel git sync via TaskSupervisor). ETS-backed search index (`:bag` table, `read_concurrency: true`). Agent discovers skills via `skill_search` tool → searches index → loads SKILL.md on-demand.
+- **Caching:** `Eclaw.Cache` ETS-backed TTL cache for web_fetch/web_search results. Configurable TTL via `ECLAW_CACHE_TTL`.
+- **Multi-model routing:** `Eclaw.Router` classifies prompts → routes simple prompts to Haiku, complex to default model. Opt-in via config.
 
 ## Important Files
 
@@ -85,7 +94,16 @@ Eclaw.Supervisor (rest_for_one)
 | `lib/eclaw/tools.ex` | Tool execution with security checks, SSRF-safe web_fetch |
 | `lib/eclaw/security.ex` | Path validation, SSRF protection, symlink resolution |
 | `lib/eclaw/approval.ex` | Tiered command blocklist (blocked/needs_approval/safe) |
-| `lib/eclaw/browser.ex` | Playwright-based browser automation (5 tools) |
+| `lib/eclaw/browser.ex` | Playwright-based browser automation (7 tools) |
+| `lib/eclaw/mcp.ex` | MCP client — dual transport (stdio + HTTP/SSE), reconnection, tool discovery |
+| `lib/eclaw/mcp/http_transport.ex` | HTTP/SSE transport GenServer for remote MCP servers |
+| `lib/eclaw/skills/openclaw.ex` | OpenClaw skill index — ETS search, auto-clone repos, SKILL.md loading |
+| `lib/eclaw/tools/mcp_manage.ex` | Runtime MCP server connect/disconnect tool |
+| `lib/eclaw/tools/skill_search.ex` | Agent-driven skill search and load tool |
+| `lib/eclaw/cache.ex` | ETS-backed TTL cache for tool results |
+| `lib/eclaw/router.ex` | Multi-model prompt routing (Haiku for simple, default for complex) |
+| `lib/eclaw/history.ex` | DETS-backed conversation history per session |
+| `lib/eclaw/scheduler.ex` | DETS-backed scheduled task manager |
 | `lib/eclaw/session_manager.ex` | Per-user session lifecycle (get_or_create, stop, list) |
 | `lib/eclaw/channel_manager.ex` | Async message routing: channel → session → agent → channel |
 | `lib/eclaw/channels/telegram.ex` | Telegram Bot: long polling, user auth, commands, message splitting |
@@ -115,6 +133,8 @@ Eclaw.Supervisor (rest_for_one)
 | `SECRET_KEY_BASE` | Prod | Phoenix secret key base |
 | `ECLAW_SESSION_SALT` | No | Cookie session signing salt |
 | `ECLAW_SIGNING_SALT` | No | LiveView signing salt |
+| `ECLAW_MCP_SERVERS` | No | JSON array of MCP server configs (auto-connect on startup) |
+| `ECLAW_TOKEN_BUDGET` | No | Max input tokens before auto-compaction, default: `60000` |
 
 ## Conventions
 
@@ -124,3 +144,4 @@ Eclaw.Supervisor (rest_for_one)
 - Events broadcast via `Eclaw.Events` (Registry-based pub/sub). Dashboard subscribes for real-time updates. Web chat uses direct `send/2` to avoid cross-session event leaks.
 - All numeric env vars use `Integer.parse` with validation (not `String.to_integer`).
 - Vietnamese comments in code are intentional — this is a Vietnamese developer's project.
+- When adding new features, always update `CLAUDE.md` and `README.md` to document them.
