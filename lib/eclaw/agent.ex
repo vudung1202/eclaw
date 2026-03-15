@@ -376,6 +376,14 @@ defmodule Eclaw.Agent do
     else
       Logger.debug("[Eclaw.Agent] Loop iteration #{iteration + 1}")
 
+      # Proactive throttle: if we hit rate limit before, wait before next LLM call
+      # to avoid immediately exhausting per-minute token quota again
+      if rate_limit_retries > 0 do
+        cooldown = min(rate_limit_retries * 5_000, 15_000)
+        Logger.debug("[Eclaw.Agent] Rate limit cooldown: #{div(cooldown, 1000)}s")
+        Process.sleep(cooldown)
+      end
+
       result =
         Retry.with_retry(fn ->
           case mode do

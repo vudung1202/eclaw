@@ -174,7 +174,7 @@ All settings via environment variables:
 | `ECLAW_MAX_TOKENS` | `8192` | Max tokens per response |
 | `ECLAW_PROVIDER` | `anthropic` | LLM provider (`anthropic`, `openai`, or `gemini`) |
 | `ECLAW_COMMAND_TIMEOUT` | `30000` | Bash command timeout in ms |
-| `ECLAW_TOKEN_BUDGET` | `60000` | Max input tokens before auto-compaction |
+| `ECLAW_TOKEN_BUDGET` | `20000` | Max input tokens before auto-compaction |
 | `ECLAW_DASHBOARD` | `false` | Start Phoenix dashboard |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram Bot API token (auto-starts bot) |
 | `TELEGRAM_ALLOWED_USERS` | — | Comma-separated Telegram user IDs allowed to use the bot |

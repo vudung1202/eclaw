@@ -134,7 +134,7 @@ Eclaw.Supervisor (rest_for_one)
 | `ECLAW_SESSION_SALT` | No | Cookie session signing salt |
 | `ECLAW_SIGNING_SALT` | No | LiveView signing salt |
 | `ECLAW_MCP_SERVERS` | No | JSON array of MCP server configs (auto-connect on startup) |
-| `ECLAW_TOKEN_BUDGET` | No | Max input tokens before auto-compaction, default: `60000` |
+| `ECLAW_TOKEN_BUDGET` | No | Max input tokens before auto-compaction, default: `20000` |
 
 ## Conventions
 

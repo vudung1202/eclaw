@@ -11,14 +11,14 @@ config :eclaw,
   anthropic_version: "2023-06-01",
 
   # Agent settings
-  max_iterations: 10,
+  max_iterations: 25,
 
   # Tool settings
   command_timeout: 30_000,
 
   # Context management
   # Token budget per request (compacts if exceeded). Lower this if account has low rate limits.
-  input_token_budget: 60_000,
+  input_token_budget: 20_000,
 
   # Retry settings
   max_retries: 3,
