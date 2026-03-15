@@ -521,12 +521,19 @@ defmodule Eclaw.Tools do
     |> String.replace(~r/<(nav|header|footer|aside)[^>]*>.*?<\/\1>/si, "")
     # Remove HTML comments
     |> String.replace(~r/<!--.*?-->/s, "")
+    # Preserve table structure: convert cells to tab-separated, rows to newlines
+    |> String.replace(~r/<\/t[dh]>/i, "\t")
+    |> String.replace(~r/<\/tr>/i, "\n")
+    # Preserve line breaks for block elements
+    |> String.replace(~r/<\/(p|div|li|h[1-6]|br\s*\/?)>/i, "\n")
+    |> String.replace(~r/<br\s*\/?\s*>/i, "\n")
     # Remove remaining tags
     |> String.replace(~r/<[^>]+>/, " ")
     # Decode HTML entities
     |> decode_html_entities()
-    # Collapse whitespace
-    |> String.replace(~r/\s+/, " ")
+    # Collapse spaces (but preserve newlines and tabs for table layout)
+    |> String.replace(~r/[^\S\n\t]+/, " ")
+    |> String.replace(~r/\n{3,}/, "\n\n")
     |> String.trim()
   end
 

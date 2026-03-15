@@ -69,13 +69,13 @@ defmodule Eclaw.ContextTest do
     end
 
     test "passes through results at exactly the limit" do
-      # @max_tool_result_chars is 4_000
-      at_limit = String.duplicate("x", 4_000)
+      # @max_tool_result_chars is 8_000
+      at_limit = String.duplicate("x", 8_000)
       assert Context.truncate_tool_result(at_limit) == at_limit
     end
 
     test "truncates long results with head+tail" do
-      long = String.duplicate("a", 8_000)
+      long = String.duplicate("a", 16_000)
       result = Context.truncate_tool_result(long)
 
       # Should contain omission marker
@@ -88,8 +88,8 @@ defmodule Eclaw.ContextTest do
 
     test "truncated result starts with head of original" do
       # Create recognizable head and tail
-      head = String.duplicate("H", 3_000)
-      tail = String.duplicate("T", 3_000)
+      head = String.duplicate("H", 6_000)
+      tail = String.duplicate("T", 6_000)
       original = head <> tail
 
       result = Context.truncate_tool_result(original)
@@ -101,11 +101,11 @@ defmodule Eclaw.ContextTest do
     end
 
     test "omission marker shows correct character count" do
-      long = String.duplicate("x", 8_000)
+      long = String.duplicate("x", 16_000)
       result = Context.truncate_tool_result(long)
 
-      # head_size = 2000, tail_size = 2000, omitted = 8000 - 2000 - 2000 = 4000
-      assert result =~ "4000 chars omitted"
+      # head_size = 4000, tail_size = 4000, omitted = 16000 - 4000 - 4000 = 8000
+      assert result =~ "8000 chars omitted"
     end
 
     test "handles UTF-8 content safely" do

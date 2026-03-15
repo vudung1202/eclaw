@@ -32,8 +32,8 @@ defmodule Eclaw.Context do
   @compaction_threshold 0.70
   # How many recent messages to keep (not compacted)
   @keep_recent 4
-  # Max tool result chars before truncation (~1100 tokens)
-  @max_tool_result_chars 4_000
+  # Max tool result chars before truncation (~2300 tokens)
+  @max_tool_result_chars 8_000
 
   # ── Public API ─────────────────────────────────────────────────────
 
