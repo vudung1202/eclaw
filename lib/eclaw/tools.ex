@@ -336,7 +336,7 @@ defmodule Eclaw.Tools do
             if location && Security.safe_url?(location) do
               case Req.get(location, receive_timeout: 15_000, redirect: false) do
                 {:ok, %{status: 200, body: body}} when is_binary(body) ->
-                  body |> strip_html() |> Context.truncate_tool_result()
+                  body |> process_html_body() |> Context.truncate_tool_result()
 
                 {:ok, %{status: 200, body: body}} when is_map(body) ->
                   body |> Jason.encode!(pretty: true) |> Context.truncate_tool_result()
@@ -352,7 +352,7 @@ defmodule Eclaw.Tools do
             end
 
           {:ok, %{status: 200, body: body}} when is_binary(body) ->
-            body |> strip_html() |> Context.truncate_tool_result()
+            body |> process_html_body() |> Context.truncate_tool_result()
 
           {:ok, %{status: 200, body: body}} when is_map(body) ->
             body |> Jason.encode!(pretty: true) |> Context.truncate_tool_result()
@@ -510,6 +510,24 @@ defmodule Eclaw.Tools do
     |> String.replace(~r/(sk-[a-zA-Z0-9]{10})[a-zA-Z0-9]+/, "\\1***")
     |> String.replace(~r/(Bearer\s+)[^\s"']+/, "\\1[REDACTED]")
     |> String.replace(~r/((?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD)\s*=\s*)[^\s"']+/i, "\\1[REDACTED]")
+  end
+
+  # Process HTML body: strip tags and detect JS-rendered pages with no useful content.
+  defp process_html_body(html) do
+    stripped = strip_html(html)
+    content_len = String.length(String.trim(stripped))
+    html_len = String.length(html)
+
+    # If the page had significant HTML but very little text content,
+    # it's likely a JS-rendered page (React/Vue/Angular SPA).
+    if html_len > 1_000 and content_len < 200 do
+      stripped <>
+        "\n\n[WARNING: This page appears to load content dynamically via JavaScript. " <>
+        "The actual data is not available via web_fetch. " <>
+        "Use browser_navigate or browser_evaluate to extract data from JS-rendered pages.]"
+    else
+      stripped
+    end
   end
 
   # Strip HTML to clean text content.

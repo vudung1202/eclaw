@@ -358,11 +358,16 @@ defmodule Eclaw.Browser do
   defp build_navigate_script(url, wait_for) do
     wait_line =
       if wait_for do
-        "await page.waitForSelector(#{js_string_literal(wait_for)}, { timeout: 10000 });"
+        # Wait for selector, then wait for network to settle (XHR data loading)
+        """
+        await page.waitForSelector(#{js_string_literal(wait_for)}, { timeout: 10000 });
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        """
       else
         # Wait for SPA content to render (body has meaningful text)
         """
-        await page.waitForFunction(() => (document.body.innerText || '').trim().length > 50, { timeout: 10000 }).catch(() => {});
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        await page.waitForFunction(() => (document.body.innerText || '').trim().length > 50, { timeout: 5000 }).catch(() => {});
         """
       end
 

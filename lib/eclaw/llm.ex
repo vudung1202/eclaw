@@ -138,7 +138,9 @@ defmodule Eclaw.LLM do
       "name" => "web_fetch",
       "description" =>
         "Fetch the content of a web page URL. Returns the text content (HTML tags stripped). " <>
-          "Use this to read web pages, API endpoints, documentation, etc.",
+          "Use this to read web pages, API endpoints, documentation, etc. " <>
+          "NOTE: Cannot render JavaScript. For pages that load data dynamically " <>
+          "(e.g. gold prices, stock prices, SPAs), use browser_navigate instead.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
