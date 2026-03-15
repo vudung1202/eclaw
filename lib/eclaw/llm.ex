@@ -44,168 +44,104 @@ defmodule Eclaw.LLM do
   @builtin_tools [
     %{
       "name" => "execute_bash",
-      "description" =>
-        "Execute a bash command on the local system and return its stdout/stderr output. " <>
-          "Use this for running terminal commands like ls, cat, grep, git, etc.",
+      "description" => "Run a bash command and return stdout/stderr.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "command" => %{
-            "type" => "string",
-            "description" => "The bash command to execute"
-          }
+          "command" => %{"type" => "string", "description" => "Bash command to execute"}
         },
         "required" => ["command"]
       }
     },
     %{
       "name" => "read_file",
-      "description" =>
-        "Read the full contents of a file at the given path. " <>
-          "Returns the file content as a string, or an error message if the file cannot be read.",
+      "description" => "Read file contents at the given path.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "path" => %{
-            "type" => "string",
-            "description" => "Absolute or relative path to the file to read"
-          }
+          "path" => %{"type" => "string", "description" => "File path"}
         },
         "required" => ["path"]
       }
     },
     %{
       "name" => "write_file",
-      "description" =>
-        "Write content to a file at the given path. Creates the file if it doesn't exist, " <>
-          "overwrites if it does. Creates parent directories automatically.",
+      "description" => "Write content to a file. Creates parent directories.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "path" => %{
-            "type" => "string",
-            "description" => "Absolute or relative path to the file to write"
-          },
-          "content" => %{
-            "type" => "string",
-            "description" => "The content to write to the file"
-          }
+          "path" => %{"type" => "string", "description" => "File path"},
+          "content" => %{"type" => "string", "description" => "Content to write"}
         },
         "required" => ["path", "content"]
       }
     },
     %{
       "name" => "list_directory",
-      "description" =>
-        "List all files and directories at the given path. " <>
-          "Returns entries with type indicators: [dir] for directories, [file] for files.",
+      "description" => "List files and subdirectories at a path.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "path" => %{
-            "type" => "string",
-            "description" => "Path to the directory to list. Defaults to current directory."
-          }
+          "path" => %{"type" => "string", "description" => "Directory path"}
         },
         "required" => ["path"]
       }
     },
     %{
       "name" => "search_files",
-      "description" =>
-        "Search for a pattern (regex or literal) in files within a directory. " <>
-          "Similar to grep -rn. Returns matching lines with file path and line number.",
+      "description" => "Search for a regex pattern in files (like grep -rn).",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "pattern" => %{
-            "type" => "string",
-            "description" => "The search pattern (supports Elixir regex)"
-          },
-          "path" => %{
-            "type" => "string",
-            "description" => "Directory to search in. Defaults to current directory."
-          },
-          "glob" => %{
-            "type" => "string",
-            "description" => "File glob pattern to filter, e.g. \"*.ex\", \"*.md\". Defaults to all files."
-          }
+          "pattern" => %{"type" => "string", "description" => "Search pattern (regex)"},
+          "path" => %{"type" => "string", "description" => "Directory to search in"},
+          "glob" => %{"type" => "string", "description" => "File filter glob (e.g. *.ex)"}
         },
         "required" => ["pattern", "path"]
       }
     },
     %{
       "name" => "web_fetch",
-      "description" =>
-        "Fetch the content of a web page URL. Returns the text content (HTML tags stripped). " <>
-          "Use this to read web pages, API endpoints, documentation, etc. " <>
-          "NOTE: Cannot render JavaScript. For pages that load data dynamically " <>
-          "(e.g. gold prices, stock prices, SPAs), use browser_navigate instead.",
+      "description" => "Fetch a web page (HTML stripped). Cannot render JS — use browser_navigate for dynamic pages.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "url" => %{
-            "type" => "string",
-            "description" => "The URL to fetch (must start with http:// or https://)"
-          }
+          "url" => %{"type" => "string", "description" => "URL (http/https)"}
         },
         "required" => ["url"]
       }
     },
     %{
       "name" => "web_search",
-      "description" =>
-        "Search the web using DuckDuckGo and return results. " <>
-          "Use this for real-time information: prices, news, weather, current events, etc.",
+      "description" => "Search the web via DuckDuckGo. Use for prices, news, weather, current events.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "query" => %{
-            "type" => "string",
-            "description" => "The search query"
-          }
+          "query" => %{"type" => "string", "description" => "Search query"}
         },
         "required" => ["query"]
       }
     },
     %{
       "name" => "store_memory",
-      "description" =>
-        "Save important information to persistent memory for future sessions. " <>
-          "Use this to remember user preferences, contacts, personal info, nicknames, etc. " <>
-          "Examples: 'wife is Thao Phuong on Messenger', 'user prefers Vietnamese', 'default warehouse is HCM'.",
+      "description" => "Save info to persistent memory (contacts, preferences, facts).",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "key" => %{
-            "type" => "string",
-            "description" => "Short identifier for this memory (e.g. 'wife_contact', 'language_pref')"
-          },
-          "content" => %{
-            "type" => "string",
-            "description" => "The information to remember"
-          },
-          "type" => %{
-            "type" => "string",
-            "enum" => ["fact", "preference", "context"],
-            "description" => "Memory type: fact (contacts, names), preference (settings), context (situational)"
-          }
+          "key" => %{"type" => "string", "description" => "Short key (e.g. wife_contact)"},
+          "content" => %{"type" => "string", "description" => "Information to remember"},
+          "type" => %{"type" => "string", "enum" => ["fact", "preference", "context"], "description" => "Memory type"}
         },
         "required" => ["key", "content"]
       }
     },
     %{
       "name" => "recall_memory",
-      "description" =>
-        "Search persistent memory for previously stored information. " <>
-          "Use this to look up user contacts, preferences, or any previously saved facts.",
+      "description" => "Search persistent memory for stored info.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "query" => %{
-            "type" => "string",
-            "description" => "Search query (e.g. 'wife', 'messenger contact', 'language')"
-          }
+          "query" => %{"type" => "string", "description" => "Search query"}
         },
         "required" => ["query"]
       }

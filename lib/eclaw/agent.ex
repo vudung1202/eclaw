@@ -515,18 +515,31 @@ defmodule Eclaw.Agent do
     notify(mode, {:tool_call, name, input})
     Logger.info("[Eclaw.Agent] Tool: #{name} #{inspect(input, limit: 300)}")
 
-    # Build execution context with channel-aware approval callback
-    tool_context = build_tool_context(mode)
-
+    # Check if this domain was already blocked (bot protection, etc.)
     result =
-      try do
-        Telemetry.span([:eclaw, :tool, :execute], %{tool: name}, fn ->
-          Eclaw.Tools.execute(name, input, tool_context)
-        end)
-      rescue
-        e ->
-          Logger.error("[Eclaw.Agent] Tool #{name} crashed: #{Exception.message(e)}")
-          "Error: Tool crashed — #{Exception.message(e)}"
+      case check_domain_skip(name, input) do
+        {:skip, reason} ->
+          Logger.info("[Eclaw.Agent] Skipping blocked domain: #{reason}")
+          reason
+
+        :ok ->
+          # Build execution context with channel-aware approval callback
+          tool_context = build_tool_context(mode)
+
+          tool_result =
+            try do
+              Telemetry.span([:eclaw, :tool, :execute], %{tool: name}, fn ->
+                Eclaw.Tools.execute(name, input, tool_context)
+              end)
+            rescue
+              e ->
+                Logger.error("[Eclaw.Agent] Tool #{name} crashed: #{Exception.message(e)}")
+                "Error: Tool crashed — #{Exception.message(e)}"
+            end
+
+          # Track domains that return bot protection errors
+          maybe_block_domain(name, input, tool_result)
+          tool_result
       end
 
     Logger.info("[Eclaw.Agent] Result: #{String.slice(result, 0, 200)}")
@@ -538,6 +551,42 @@ defmodule Eclaw.Agent do
       "content" => result
     }
   end
+
+  # Check if a domain has been blocked during this session (bot protection, etc.)
+  defp check_domain_skip(name, input) when name in ["browser_navigate", "web_fetch"] do
+    url = input["url"]
+
+    if url do
+      domain = URI.parse(url).host
+      blocked = Process.get(:blocked_domains, MapSet.new())
+
+      if domain && MapSet.member?(blocked, domain) do
+        {:skip, "[SKIP] #{domain} was already blocked by bot protection in this session. Try a different website."}
+      else
+        :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp check_domain_skip(_, _), do: :ok
+
+  # Track domains that return bot protection or JS-rendered errors
+  defp maybe_block_domain(name, input, result) when name in ["browser_navigate", "web_fetch"] and is_binary(result) do
+    if String.starts_with?(result, "[BOT-PROTECTED]") or String.starts_with?(result, "[JS-RENDERED PAGE]") do
+      url = input["url"]
+
+      if url do
+        domain = URI.parse(url).host
+        blocked = Process.get(:blocked_domains, MapSet.new())
+        Process.put(:blocked_domains, MapSet.put(blocked, domain))
+        Logger.info("[Eclaw.Agent] Blocked domain: #{domain}")
+      end
+    end
+  end
+
+  defp maybe_block_domain(_, _, _), do: :ok
 
   defp build_tool_context(:no_stream), do: %{channel: :cli}
   defp build_tool_context({:stream, _on_chunk}), do: %{channel: :cli}

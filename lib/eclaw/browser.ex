@@ -36,66 +36,61 @@ defmodule Eclaw.Browser do
     [
       %{
         "name" => "browser_navigate",
-        "description" =>
-          "Navigate to a URL and return the page text content. " <>
-            "Useful for reading web pages that require JavaScript rendering.",
+        "description" => "Navigate to URL and return page text (renders JavaScript).",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "url" => %{"type" => "string", "description" => "The URL to navigate to"},
-            "wait_for" => %{"type" => "string", "description" => "CSS selector to wait for before extracting content (optional)"}
+            "url" => %{"type" => "string", "description" => "URL to navigate to"},
+            "wait_for" => %{"type" => "string", "description" => "CSS selector to wait for (optional)"}
           },
           "required" => ["url"]
         }
       },
       %{
         "name" => "browser_screenshot",
-        "description" =>
-          "Take a screenshot of a web page. Returns the file path to the saved screenshot.",
+        "description" => "Take a screenshot of a web page.",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "url" => %{"type" => "string", "description" => "URL to screenshot (or uses current page if empty)"},
-            "selector" => %{"type" => "string", "description" => "CSS selector to screenshot a specific element (optional)"},
-            "full_page" => %{"type" => "boolean", "description" => "Capture full scrollable page (default: false)"}
+            "url" => %{"type" => "string", "description" => "URL to screenshot"},
+            "selector" => %{"type" => "string", "description" => "CSS selector for specific element"},
+            "full_page" => %{"type" => "boolean", "description" => "Full scrollable page"}
           },
           "required" => []
         }
       },
       %{
         "name" => "browser_click",
-        "description" => "Click an element on a web page by CSS selector.",
+        "description" => "Click an element by CSS selector.",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "url" => %{"type" => "string", "description" => "URL to navigate to before clicking"},
-            "selector" => %{"type" => "string", "description" => "CSS selector of the element to click"}
+            "url" => %{"type" => "string", "description" => "URL to navigate to"},
+            "selector" => %{"type" => "string", "description" => "CSS selector to click"}
           },
           "required" => ["url", "selector"]
         }
       },
       %{
         "name" => "browser_type",
-        "description" => "Type text into an input field on a web page identified by CSS selector.",
+        "description" => "Type text into an input field.",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "url" => %{"type" => "string", "description" => "URL to navigate to before typing"},
-            "selector" => %{"type" => "string", "description" => "CSS selector of the input element"},
-            "text" => %{"type" => "string", "description" => "Text to type into the field"}
+            "url" => %{"type" => "string", "description" => "URL to navigate to"},
+            "selector" => %{"type" => "string", "description" => "CSS selector of input"},
+            "text" => %{"type" => "string", "description" => "Text to type"}
           },
           "required" => ["url", "selector", "text"]
         }
       },
       %{
         "name" => "browser_evaluate",
-        "description" =>
-          "Execute JavaScript code in the browser page context and return the result. " <>
-            "Useful for extracting structured data, interacting with page APIs, or running complex selectors.",
+        "description" => "Execute JavaScript in page context, return result.",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "script" => %{"type" => "string", "description" => "JavaScript code to execute in the browser"},
+            "script" => %{"type" => "string", "description" => "JavaScript code"},
             "url" => %{"type" => "string", "description" => "URL to navigate to first (optional)"}
           },
           "required" => ["script"]
@@ -103,28 +98,23 @@ defmodule Eclaw.Browser do
       },
       %{
         "name" => "browser_compose",
-        "description" =>
-          "Run multiple browser actions in a SINGLE session (navigate → wait → type → click → etc). " <>
-            "IMPORTANT: Use this instead of separate browser_type + browser_click calls, because each " <>
-            "separate call opens a NEW browser and loses previous state. " <>
-            "Steps run sequentially on the same page. " <>
-            "Supported step actions: wait (for selector), type (fill input), click, press (key like Enter), evaluate (JS).",
+        "description" => "Run multiple actions in ONE browser session. Use instead of separate browser_type + browser_click (which lose state). Actions: wait, type, click, press, evaluate.",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "url" => %{"type" => "string", "description" => "URL to navigate to first"},
+            "url" => %{"type" => "string", "description" => "URL to navigate to"},
             "steps" => %{
               "type" => "array",
-              "description" => "Ordered list of actions to perform",
+              "description" => "Actions to perform sequentially",
               "items" => %{
                 "type" => "object",
                 "properties" => %{
-                  "action" => %{"type" => "string", "description" => "wait | type | click | press | evaluate"},
-                  "selector" => %{"type" => "string", "description" => "CSS selector (for wait/type/click/press)"},
-                  "text" => %{"type" => "string", "description" => "Text to type (for type action)"},
-                  "key" => %{"type" => "string", "description" => "Key to press (for press action, e.g. Enter)"},
-                  "script" => %{"type" => "string", "description" => "JS code (for evaluate action)"},
-                  "timeout" => %{"type" => "number", "description" => "Timeout in ms (for wait, default 10000)"}
+                  "action" => %{"type" => "string", "description" => "wait|type|click|press|evaluate"},
+                  "selector" => %{"type" => "string", "description" => "CSS selector"},
+                  "text" => %{"type" => "string", "description" => "Text (for type)"},
+                  "key" => %{"type" => "string", "description" => "Key (for press)"},
+                  "script" => %{"type" => "string", "description" => "JS (for evaluate)"},
+                  "timeout" => %{"type" => "number", "description" => "Timeout ms"}
                 },
                 "required" => ["action"]
               }
@@ -135,16 +125,11 @@ defmodule Eclaw.Browser do
       },
       %{
         "name" => "browser_login",
-        "description" =>
-          "Open a VISIBLE browser window for manual login. " <>
-            "The user logs in manually — cookies are saved to a persistent profile. " <>
-            "All subsequent browser_* tool calls will reuse this login session. " <>
-            "Use this once per site (e.g. Facebook, Google, GitHub) before using other browser tools on authenticated pages. " <>
-            "The browser window stays open for 2 minutes.",
+        "description" => "Open visible browser for manual login. Cookies saved for all future browser_* calls.",
         "input_schema" => %{
           "type" => "object",
           "properties" => %{
-            "url" => %{"type" => "string", "description" => "URL to open for login (e.g. https://www.messenger.com)"}
+            "url" => %{"type" => "string", "description" => "URL to open for login"}
           },
           "required" => ["url"]
         }
@@ -155,7 +140,11 @@ defmodule Eclaw.Browser do
   def execute("browser_navigate", %{"url" => url} = input) do
     with :ok <- validate_browser_url(url) do
       wait_for = Map.get(input, "wait_for")
-      navigate(url, wait_for: wait_for)
+
+      case navigate(url, wait_for: wait_for) do
+        {:ok, content} -> {:ok, detect_bot_protection(content, url)}
+        error -> error
+      end
     end
   end
 
@@ -516,6 +505,33 @@ defmodule Eclaw.Browser do
     case script do
       {:error, _} = err -> err
       script_text -> run_playwright_script(script_text)
+    end
+  end
+
+  # Detect Cloudflare, hCaptcha, and similar bot protection pages.
+  # Returns clear error so the agent stops retrying the same blocked site.
+  defp detect_bot_protection(content, url) do
+    lower = String.downcase(content)
+
+    cloudflare_markers = [
+      "checking your browser",
+      "performing security verification",
+      "just a moment",
+      "enable javascript and cookies",
+      "attention required",
+      "cf-challenge",
+      "verify you are human",
+      "ray id:"
+    ]
+
+    if Enum.any?(cloudflare_markers, &String.contains?(lower, &1)) do
+      domain = URI.parse(url).host || url
+      Logger.warning("[Browser] Bot protection detected on #{domain}")
+
+      "[BOT-PROTECTED] #{domain} uses bot protection (Cloudflare/hCaptcha) and cannot be accessed " <>
+        "by a headless browser. Try a DIFFERENT website for this information. Do NOT retry this domain."
+    else
+      content
     end
   end
 

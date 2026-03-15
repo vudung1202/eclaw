@@ -313,9 +313,17 @@ defmodule Eclaw.Tools do
         "Security error: Access to internal/private network addresses is blocked"
 
       true ->
-        Cache.get_or_compute({:web_fetch, url}, Config.cache_ttl_web_fetch(), fn ->
-          do_web_fetch(url)
-        end)
+        result =
+          Cache.get_or_compute({:web_fetch, url}, Config.cache_ttl_web_fetch(), fn ->
+            do_web_fetch(url)
+          end)
+
+        # Don't cache JS-rendered page errors — next attempt might use browser tools
+        if String.starts_with?(result, "[JS-RENDERED PAGE]") do
+          Cache.invalidate({:web_fetch, url})
+        end
+
+        result
     end
   end
 
@@ -433,6 +441,9 @@ defmodule Eclaw.Tools do
   end
 
   defp parse_duckduckgo_results(html) do
+    # Try to extract instant answer (zero-click box) first — often contains price data
+    instant_answer = extract_instant_answer(html)
+
     # DuckDuckGo HTML version uses <a class="result__a"> for titles and
     # <a class="result__snippet"> for snippets
     results =
@@ -449,11 +460,45 @@ defmodule Eclaw.Tools do
         "#{idx}. #{title}\n   #{url}\n   #{snippet}"
       end)
 
-    if results == [] do
-      "No search results found for: #{html |> strip_tags() |> String.slice(0, 200)}"
-    else
-      Enum.join(results, "\n\n")
+    cond do
+      instant_answer != nil and results != [] ->
+        "INSTANT ANSWER: #{instant_answer}\n\n" <> Enum.join(results, "\n\n")
+
+      instant_answer != nil ->
+        "INSTANT ANSWER: #{instant_answer}"
+
+      results != [] ->
+        Enum.join(results, "\n\n")
+
+      true ->
+        "No search results found for: #{html |> strip_tags() |> String.slice(0, 200)}"
     end
+  end
+
+  # Extract DuckDuckGo zero-click instant answer (prices, facts, etc.)
+  defp extract_instant_answer(html) do
+    # Try multiple patterns DuckDuckGo uses for instant answers
+    patterns = [
+      # Zero-click abstract
+      ~r/<div[^>]+id="zero_click_abstract"[^>]*>(.*?)<\/div>/si,
+      # Zero-click info box
+      ~r/<div[^>]+class="zci__result"[^>]*>(.*?)<\/div>/si,
+      # Module answer (used for calculations, conversions, prices)
+      ~r/<div[^>]+class="module--answer"[^>]*>(.*?)<\/div>/si,
+      # Zero-click body text
+      ~r/<div[^>]+class="c-base__body"[^>]*>(.*?)<\/div>/si
+    ]
+
+    Enum.find_value(patterns, fn pattern ->
+      case Regex.run(pattern, html) do
+        [_, content] ->
+          text = content |> strip_tags() |> String.trim()
+          if String.length(text) > 5, do: text
+
+        _ ->
+          nil
+      end
+    end)
   end
 
   defp decode_ddg_url(url) do
@@ -513,6 +558,7 @@ defmodule Eclaw.Tools do
   end
 
   # Process HTML body: strip tags and detect JS-rendered pages with no useful content.
+  # Returns clear error for JS pages — forces agent to switch to browser tools.
   defp process_html_body(html) do
     stripped = strip_html(html)
     content_len = String.length(String.trim(stripped))
@@ -520,11 +566,10 @@ defmodule Eclaw.Tools do
 
     # If the page had significant HTML but very little text content,
     # it's likely a JS-rendered page (React/Vue/Angular SPA).
+    # Return a clear error instead of empty content — forces agent to change approach.
     if html_len > 1_000 and content_len < 200 do
-      stripped <>
-        "\n\n[WARNING: This page appears to load content dynamically via JavaScript. " <>
-        "The actual data is not available via web_fetch. " <>
-        "Use browser_navigate or browser_evaluate to extract data from JS-rendered pages.]"
+      "[JS-RENDERED PAGE] This page loads content via JavaScript and web_fetch cannot extract it. " <>
+        "Use browser_navigate with the same URL to render JavaScript and extract the actual content."
     else
       stripped
     end
